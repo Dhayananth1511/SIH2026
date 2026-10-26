@@ -1,845 +1,898 @@
-# 🏛️ AICTE Pragyan-Drishti (प्रज्ञान दृष्टि)
-### AI-Powered Institutional Application Validation, Document Authentication & Regulatory Compliance Verification Platform
+# VerifyAI — AI-Powered Application Validation, Document Authentication & Regulatory Compliance Platform
 
-[![SIH 2026](https://img.shields.io/badge/SIH-2026-orange.svg?style=for-the-badge&logo=target)](https://sih.gov.in)
-[![AICTE](https://img.shields.io/badge/Ministry_of_Education-AICTE-1a365d.svg?style=for-the-badge)](https://www.aicte-india.org)
-[![React](https://img.shields.io/badge/Frontend-React_18_|_TypeScript_|_Tailwind_|_shadcn/ui-61dafb.svg?style=for-the-badge&logo=react)](https://react.dev)
-[![Node.js](https://img.shields.io/badge/API_Gateway-Node.js_|_Express_|_TypeScript-339933.svg?style=for-the-badge&logo=node.js)](https://nodejs.org)
-[![FastAPI](https://img.shields.io/badge/AI_Engine-FastAPI_|_Python_3.11-009688.svg?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com)
-[![LangGraph](https://img.shields.io/badge/Orchestrator-LangGraph-blueviolet.svg?style=for-the-badge)](https://langchain-ai.github.io/langgraph/)
-[![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL_16_|_SQLAlchemy-4169e1.svg?style=for-the-badge&logo=postgresql)](https://www.postgresql.org)
-[![Docker](https://img.shields.io/badge/Deployment-Docker_Compose-2496ed.svg?style=for-the-badge&logo=docker)](https://www.docker.com)
+
+[![AICTE / MoE](https://img.shields.io/badge/Initiative-AICTE%20%7C%20Ministry%20of%20Education-1A365D?style=for-the-badge&logo=india)](https://www.aicte-india.org/)
+[![SIH Hackathon](https://img.shields.io/badge/Smart%20India%20Hackathon-Problem%20Statement%20Solution-FF9933?style=for-the-badge)](https://sih.gov.in/)
+[![Stack](https://img.shields.io/badge/Architecture-React%20%7C%20Node%20%7C%20FastAPI%20%7C%20LangGraph-138808?style=for-the-badge)](https://github.com/)
+[![Docker Ready](https://img.shields.io/badge/Deployment-Docker%20Compose-2496ED?style=for-the-badge&logo=docker)](https://docker.com)
+[![License: MIT](https://img.shields.io/badge/License-MIT-gray?style=for-the-badge)](LICENSE)
 
 ---
 
-## 📑 Table of Contents
+## Executive Overview
 
-- [1. Executive Summary & Problem Context](#1-executive-summary--problem-context)
-  - [1.1 Background: The AICTE Approval Process](#11-background-the-aicte-approval-process)
-  - [1.2 The Core Problem](#12-the-core-problem)
-  - [1.3 Strategic Solution: Pragyan-Drishti](#13-strategic-solution-pragyan-drishti)
-- [2. System Objectives & Design Principles](#2-system-objectives--design-principles)
-- [3. End-to-End System Architecture](#3-end-to-end-system-architecture)
-  - [3.1 High-Level Architecture Diagram](#31-high-level-architecture-diagram)
-  - [3.2 Microservice Breakdown](#32-microservice-breakdown)
-- [4. AI & Workflow Orchestration (LangGraph Engine)](#4-ai--workflow-orchestration-langgraph-engine)
-  - [4.1 LangGraph StateGraph Workflow Diagram](#41-langgraph-stategraph-workflow-diagram)
-  - [4.2 Workflow Steps & Conditional Fallbacks](#42-workflow-steps--conditional-fallbacks)
-- [5. Core Modules & Technical Implementation](#5-core-modules--technical-implementation)
-  - [5.1 Module A: Document Extraction & Classification (PaddleOCR + PyMuPDF)](#51-module-a-document-extraction--classification-paddleocr--pymupdf)
-  - [5.2 Module B: Forensics & Anomaly Detection (OpenCV + Metadata Analysis)](#52-module-b-forensics--anomaly-detection-opencv--metadata-analysis)
-  - [5.3 Module C: Authority Verification (DigiLocker, QR, e-Sign, Land Registries)](#53-module-c-authority-verification-digilocker-qr-e-sign-land-registries)
-  - [5.4 Module D: Deterministic APH Regulatory Compliance Engine](#54-module-d-deterministic-aph-regulatory-compliance-engine)
-  - [5.5 Module E: Infrastructure CV Analysis & Geotag Verification](#55-module-e-infrastructure-cv-analysis--geotag-verification)
-  - [5.6 Module F: Scrutiny Officer Dashboard & Human-in-the-Loop Review](#56-module-f-scrutiny-officer-dashboard--human-in-the-loop-review)
-  - [5.7 Module G: Immutable Audit Trail & Evidence Chains](#57-module-g-immutable-audit-trail--evidence-chains)
-- [6. Sequence Flow Diagram](#6-sequence-flow-diagram)
-- [7. Database Schema & Data Modeling (ERD)](#7-database-schema--data-modeling-erd)
-  - [7.1 Entity-Relationship Diagram](#71-entity-relationship-diagram)
-  - [7.2 Key Entity Specifications](#72-key-entity-specifications)
-- [8. Technology Stack Specification](#8-technology-stack-specification)
-- [9. Repository Directory Structure](#9-repository-directory-structure)
-- [10. API Specification & Integration Contracts](#10-api-specification--integration-contracts)
-- [11. Installation & Local Development Setup](#11-installation--local-development-setup)
-  - [11.1 Prerequisites](#111-prerequisites)
-  - [11.2 Quickstart with Docker Compose](#112-quickstart-with-docker-compose)
-  - [11.3 Manual Local Setup (Frontend, Backend, AI Engine)](#113-manual-local-setup-frontend-backend-ai-engine)
-- [12. Evaluation Metrics & Benchmark Dataset](#12-evaluation-metrics--benchmark-dataset)
-- [13. Security, Privacy & Legal Safeguards](#13-security-privacy--legal-safeguards)
-- [14. Placement & Software Engineering Highlights](#14-placement--software-engineering-highlights)
-- [15. License & Team Acknowledgments](#15-license--team-acknowledgments)
+Every academic cycle, the **All India Council for Technical Education (AICTE)** processes tens of thousands of institutional applications for **Extension of Approval (EoA)**, new technical campus approvals, intake variations, and institutional mergers under the mandates of the **AICTE Approval Process Handbook (APH)**.
+
+Scrutinizing millions of physical and scanned pages—land ownership deeds, municipal building approvals, fire safety clearances, structural stability certificates, faculty rolls, and bank guarantees—is an arduous, repetitive, and time-critical operation. AICTE scrutiny committees face persistent operational bottlenecks:
+- **Scattered Information & Cross-Document Inconsistencies**: Discrepancies between figures declared in the portal and figures buried across disparate affidavits, survey plans, and municipal certificates.
+- **Sophisticated Document Tampering**: Pixel-level date alterations, copied rubber stamps, altered survey plot numbers, forged issuing authority seals, and recycled certificates shared across sister campuses.
+- **Verification Latency**: Prolonged delays in manual verification against state revenue portals, universities, and issuing authority databases.
+- **Subjective Human Scrutiny & Inconsistent Checklists**: Variability in deficiency interpretation and checklist application across different regional offices.
+
+**VerifyAI** is an enterprise-grade, secure, transparent, and explainable **AI-Decision Support System (DSS)** designed for deep integration into the AICTE National Portal. It automates upstream document validation, performs multi-lingual optical extraction, runs forensic computer-vision manipulation detection, connects with authorized issuing-authority APIs (DigiLocker, State Land Portals, e-Courts, QR Verifiers), and evaluates extracted records against configurable APH regulatory rules—**while rigorously preserving 100% human-in-the-loop statutory scrutiny and sovereign decision-making**.
 
 ---
 
-## 1. Executive Summary & Problem Context
+## Table of Contents
 
-### 1.1 Background: The AICTE Approval Process
-The **All India Council for Technical Education (AICTE)**, established under the Ministry of Education, Government of India, is the statutory body regulating technical and management education institutions nationwide. Every academic year, thousands of institutions submit applications for:
-- **Extension of Approval (EoA)** for existing institutions.
-- **Establishment of New Technical Institutions**.
-- **Increase in Intake / Addition of New Courses / Emerging Areas**.
-- **Closure of Courses / Change of Site / Conversion of Diploma to Degree**.
-
-Processing these applications requires rigorous multi-tiered verification against the **AICTE Approval Process Handbook (APH)**, institutional historic records, municipal land records, fire safety certifications, building approvals, and university affiliations.
-
-### 1.2 The Core Problem
-1. **Intense Document Volume & Variety:** A single application involves 30–70 multi-page documents (deeds, NOCs, land certificates, architect floor plans, bank guarantees, audited balance sheets, faculty appointment letters, FSR declarations).
-2. **Manual Scrutiny Bottlenecks:** Manual verification of stamps, signatures, dates, and cross-consistency with past AICTE records takes weeks per institute, delaying the academic calendar.
-3. **Document Tampering & Fraud Vectors:** Forged municipal NOCs, doctored dates on expired fire certificates, digitally manipulated architect certificates, copy-pasted floor plans, and fabricated faculty credentials.
-4. **Disjointed Verification Channels:** Lack of an integrated bridge to query issuing authorities (DigiLocker, State Land Records, PWD/Municipal portals, Council of Architecture).
-5. **Human Fatigue & Subjectivity:** Variability in manual scrutiny reports, missing deficiency notices, and non-transparent dispute resolutions.
-
-### 1.3 Strategic Solution: Pragyan-Drishti
-**Pragyan-Drishti** is a secure, cloud-native, AI-assisted decision-support platform designed for seamless integration with the AICTE Web Portal. It automates:
-- Multi-format ingestion and high-fidelity text extraction via **PaddleOCR** and **PyMuPDF**.
-- Computer-vision-driven **tamper and forgery detection** (ELA, metadata mismatch, copy-move detection).
-- Direct **issuing authority verification** (DigiLocker, QR decoding, PKI e-Sign verification).
-- Strict, **deterministic rule-based compliance evaluation** against AICTE APH norms (never delegating regulatory approvals to stochastic LLMs).
-- A stateful **LangGraph orchestration** workflow connecting OCR, checks, and advisory findings.
-- An intuitive **Officer Scrutiny Cockpit** delivering evidence-linked findings with an immutable audit trail, strictly upholding **Human-in-the-Loop (HITL)** governance.
+1. [Institutional Applicant Workflow](#1-institutional-applicant-workflow)
+2. [AICTE Scrutiny Officer & Admin Workflow](#2-aicte-scrutiny-officer--admin-workflow)
+3. [VerifyAI Agent Internal Flow (LangGraph Swarm)](#3-verifyai-agent-internal-flow-langgraph-swarm)
+4. [Project Development & CI/CD Workflow](#4-project-development--cicd-workflow)
+5. [Complete System Architecture](#5-complete-system-architecture)
+   - [5a. Architecture Walkthrough & Execution Trace](#5a-architecture-walkthrough--execution-trace)
+6. [Multi-Agent Swarm — Agent I/O Specifications](#6-multi-agent-swarm--agent-io-specifications)
+7. [Forensic Vision & Manipulation Detection Engine](#7-forensic-vision--manipulation-detection-engine)
+8. [Issuing Authority Verification Gateway](#8-issuing-authority-verification-gateway)
+9. [Error Handling, Fallback & Retry Strategy](#9-error-handling-fallback--retry-strategy)
+10. [Deployment & Infrastructure Topology](#10-deployment--infrastructure-topology)
+11. [Security, DPDP Compliance & Statutory Safeguards](#11-security-dpdp-compliance--statutory-safeguards)
+12. [Observability, Telemetry & Audit Chains](#12-observability-telemetry--audit-chains)
+13. [Functional Execution Scenarios (Simulated Demos)](#13-functional-execution-scenarios-simulated-demos)
+14. [Technology Stack](#14-technology-stack)
+15. [Modular Project Structure](#15-modular-project-structure)
+16. [Local Setup and Execution Guide](#16-local-setup-and-execution-guide)
 
 ---
 
-## 2. System Objectives & Design Principles
+## 1. Institutional Applicant Workflow
 
-| Objective | Engineering Mechanism | Outcome |
-| :--- | :--- | :--- |
-| **Instant Ingestion & Classification** | PaddleOCR + PyMuPDF layout analysis + LangGraph classification | Instant categorization of 20+ statutory document types; automated missing-document alert. |
-| **Tamper & Anomaly Detection** | OpenCV Error Level Analysis (ELA), font variance checks, EXIF metadata cross-auditing | Flags manipulated text boxes, modified dates, digital splices, and cloned stamps with confidence scores. |
-| **Authoritative Verification** | QR code parsing, PKI X.509 signature validation, DigiLocker sandbox integration | Validates document authenticity against issuing authorities; flags expired/mismatched certificates. |
-| **Deterministic Regulatory Scrutiny** | Python AST rule engine encoded with AICTE APH formulas (Land, FSR, Cadre, Carpet Area) | Eliminates AI hallucination; generates mathematically sound, reproducible pass/deficiency reports. |
-| **Infrastructure Evidence Audit** | Computer Vision (CV) floor plan dimension extractor + geotag metadata validation | Flags discrepancies in lab carpet areas, classroom counts, barrier-free access, and fire exits. |
-| **Explainable HITL Governance** | Bounding-box visual evidence overlay, JSON audit log, role-based committee approvals | AI never issues binding rejection/approval; all outputs serve as evidence-backed advisory reports for officers. |
-
----
-
-## 3. End-to-End System Architecture
-
-### 3.1 High-Level Architecture Diagram
+Traces the execution path starting from institutional client login, Zod schema validation, multi-document parallel upload, real-time pre-validation checks, AI-guided deficiency rectification, to final submission into the AICTE processing queue.
 
 ```mermaid
-flowchart TB
-    subgraph ClientLayer["🖥️ Presentation Layer (React + Vite + shadcn/ui)"]
-        UI_Inst["Institution Portal<br/>(Application Submission & Status)"]
-        UI_Admin["AICTE Scrutiny Officer Cockpit<br/>(Evidence Viewer, Split-Screen Audit)"]
-        UI_Regional["Regional Officer / Inspection Dashboard"]
+graph TD
+    classDef default fill:#1e1e2e,stroke:#cdd6f4,stroke-width:2px,color:#cdd6f4;
+    classDef startEnd fill:#a6e3a1,stroke:#a6e3a1,stroke-width:2px,color:#11111b;
+    classDef process fill:#89b4fa,stroke:#89b4fa,stroke-width:2px,color:#11111b;
+    classDef agent fill:#f9e2af,stroke:#f9e2af,stroke-width:2px,color:#11111b;
+    classDef api fill:#f5c2e7,stroke:#f5c2e7,stroke-width:2px,color:#11111b;
+    classDef error fill:#f38ba8,stroke:#f38ba8,stroke-width:2px,color:#11111b;
+
+    Inst([Institution User]):::startEnd --> Auth["Institutional Auth<br/>(Zod + Hook Form + JWT RBAC)"]:::process
+    Auth --> AppCategory["Select Application Category<br/>(EoA / New Campus / Intake Variation / Merger)"]:::process
+    AppCategory --> UploadCenter["Document Upload Center<br/>(PDF / TIFF / Scanned Docs)"]:::process
+
+    UploadCenter --> FileScanner["Upload Sanitizer<br/>(ClamAV Malware + MIME Validator)"]:::process
+    FileScanner --> GatewayRouter["Express API Gateway<br/>(Rate Limiting + Token Validation)"]:::process
+
+    GatewayRouter --> PreCheckEngine["Pre-Validation Dispatcher<br/>(Node.js Service)"]:::process
+
+    %% Parallel Pre-checks
+    subgraph PreValidationStage ["Stage 1: Real-Time Instant Document Verification"]
+        DocClassifier["Document Classification<br/>(PyMuPDF Layout Heuristics)"]:::agent
+        ExpCheck["Expiration Validator<br/>(Fire NOC / Land Lease / Bank Guarantee)"]:::agent
+        CompletenessCheck["Mandatory Checklist Filter<br/>(APH Category Matrix)"]:::agent
+        QRCheck["Digital Signature & QR Scanner<br/>(PKI / e-District QR Verifier)"]:::agent
     end
 
-    subgraph GatewayLayer["🛡️ API Gateway & Auth Service (Node.js + Express + TS)"]
-        AuthService["Auth & RBAC Service<br/>(JWT + Session + Zod Validation)"]
-        DocManager["Document Management Router<br/>(Multipart Stream & Metadata)"]
-        AuditRouter["Audit & Event Bus<br/>(WebSocket + SSE Alerts)"]
+    PreCheckEngine --> DocClassifier
+    PreCheckEngine --> ExpCheck
+    PreCheckEngine --> CompletenessCheck
+    PreCheckEngine --> QRCheck
+
+    DocClassifier --> AggregatePreCheck["Aggregate Pre-Check Results"]:::process
+    ExpCheck --> AggregatePreCheck
+    CompletenessCheck --> AggregatePreCheck
+    QRCheck --> AggregatePreCheck
+
+    AggregatePreCheck --> CheckDeficiencies{"Deficiencies or Missing Files Detected?"}:::process
+
+    CheckDeficiencies -->|Yes| RectificationWizard["Self-Rectification Wizard<br/>(Live In-Browser Deficiency Warnings)"]:::error
+    RectificationWizard --> PromptReupload["Prompt User: Replace Expired / Missing File"]:::process
+    PromptReupload --> UploadCenter
+
+    CheckDeficiencies -->|No| FormalSubmission["Generate Preliminary Verification Token<br/>(SHA-256 Pre-Validation Digest)"]:::process
+    FormalSubmission --> SubmitQueue["Enqueue for Deep Scrutiny Swarm<br/>(BullMQ + PostgreSQL Status: PENDING_SCRUTINY)"]:::process
+    SubmitQueue --> InstAck([Application Successfully Submitted]):::startEnd
+```
+
+---
+
+## 2. AICTE Scrutiny Officer & Admin Workflow
+
+Details role-based access for AICTE Scrutiny Officers, Regional Directors, and Central Administrators to review evidence-linked findings, inspect anomalies, view digital verification sources, and issue statutory decisions.
+
+```mermaid
+graph TD
+    classDef default fill:#1e1e2e,stroke:#cdd6f4,stroke-width:2px,color:#cdd6f4;
+    classDef startEnd fill:#a6e3a1,stroke:#a6e3a1,stroke-width:2px,color:#11111b;
+    classDef process fill:#89b4fa,stroke:#89b4fa,stroke-width:2px,color:#11111b;
+    classDef officer fill:#f9e2af,stroke:#f9e2af,stroke-width:2px,color:#11111b;
+    classDef flag fill:#f38ba8,stroke:#f38ba8,stroke-width:2px,color:#11111b;
+    classDef approved fill:#a6e3a1,stroke:#a6e3a1,stroke-width:2px,color:#11111b;
+
+    Officer([AICTE Scrutiny Officer]):::startEnd --> AuthOfficer["Officer Authentication<br/>(MFA + RBAC Token)"]:::process
+    AuthOfficer --> OfficerQueue["Assigned Applications Queue<br/>(Sorted by Anomaly Severity & Submission Date)"]:::process
+
+    OfficerQueue --> SelectApp["Open Application Review Workspace"]:::process
+    SelectApp --> SplitScreenUI["Split-Screen Evidence Inspector<br/>(Portal Declarations vs Extracted Original PDF)"]:::officer
+
+    subgraph InspectionPanel ["Evidence Inspection & Anomaly Verification"]
+        CrossCheckView["Cross-Document Inconsistency View<br/>(Land Deed vs Municipal NOC vs Affidavit)"]:::process
+        ForensicViewer["Forensic Image Viewer<br/>(Error Level Analysis Heatmap + Stamp Overlay)"]:::flag
+        AuthAPIResult["Issuing Authority Source Log<br/>(DigiLocker / State Revenue / e-Sign Certificate)"]:::process
+        APHChecklist["APH 2024-27 Rule Matrix<br/>(SFR Ratio, Carpet Area, Lab Equipment)"]:::process
     end
 
-    subgraph StorageLayer["💾 Data & Object Persistence"]
-        Postgres[("PostgreSQL 16<br/>(Relational State, Rules, Audit Trails)")]
-        MinIO[("MinIO / S3 Object Storage<br/>(Encrypted Documents, Evidence Crops)")]
-        RedisCache[("Redis 7<br/>(Task Queue & Session Cache)")]
+    SplitScreenUI --> CrossCheckView
+    SplitScreenUI --> ForensicViewer
+    SplitScreenUI --> AuthAPIResult
+    SplitScreenUI --> APHChecklist
+
+    CrossCheckView --> OfficerEvaluation{"Officer Statutory Evaluation"}:::process
+    ForensicViewer --> OfficerEvaluation
+    AuthAPIResult --> OfficerEvaluation
+    APHChecklist --> OfficerEvaluation
+
+    OfficerEvaluation -->|Discrepancies Confirmed| GenMemo["Generate Deficiency Scrutiny Sheet (DSS)<br/>(Evidence-linked memo with APH rule citations)"]:::flag
+    OfficerEvaluation -->|Physical Verification Needed| TriggerInspection["Flag for Physical Expert Committee Inspection (EVC)"]:::flag
+    OfficerEvaluation -->|All Standards Met| RecommendApproval["Recommend for Approval / EoA Grant"]:::approved
+
+    GenMemo --> CryptographicSign["Officer Digital Sign-Off (e-Sign / PKI)"]:::process
+    TriggerInspection --> CryptographicSign
+    RecommendApproval --> CryptographicSign
+
+    CryptographicSign --> WriteAudit["Append to Immutable SHA-256 Audit Ledger<br/>(PostgreSQL + Audit Vault)"]:::process
+    WriteAudit --> NotifyInstitute["Dispatch Notification to Institution Portal & Email"]:::process
+    NotifyInstitute --> EndOfficer([Review Cycle Finalized]):::startEnd
+```
+
+---
+
+## 3. VerifyAI Agent Internal Flow (LangGraph Swarm)
+
+Highlights the multi-agent decision graph orchestrated via **LangGraph**, where specialized agents handle layout classification, multilingual OCR extraction, forensic image tampering detection, cross-document correlation, and APH compliance checks.
+
+```mermaid
+graph TD
+    classDef default fill:#1e1e2e,stroke:#cdd6f4,stroke-width:2px,color:#cdd6f4;
+    classDef startEnd fill:#a6e3a1,stroke:#a6e3a1,stroke-width:2px,color:#11111b;
+    classDef process fill:#89b4fa,stroke:#89b4fa,stroke-width:2px,color:#11111b;
+    classDef agent fill:#f9e2af,stroke:#f9e2af,stroke-width:2px,color:#11111b;
+    classDef tool fill:#f5c2e7,stroke:#f5c2e7,stroke-width:2px,color:#11111b;
+    classDef error fill:#f38ba8,stroke:#f38ba8,stroke-width:2px,color:#11111b;
+
+    AppPayload([Incoming Application Payload]):::startEnd --> MasterSupervisor["Master Scrutiny Supervisor<br/>(LangGraph Root Node)"]:::agent
+
+    MasterSupervisor --> CategoryRouter["Category Router<br/>(Determines applicable APH Checklist)"]:::process
+
+    %% Stage 1: Document Extraction Swarm
+    subgraph ExtractionSwarm ["Phase 1: Deep Ingestion & Forensic Swarm"]
+        ParserAgent["Vector Document Parser<br/>(PyMuPDF Structure & Text Extractor)"]:::agent
+        OCRAgent["Multilingual OCR Agent<br/>(PaddleOCR: Hindi / Regional / English)"]:::agent
+        ForensicAgent["Forensic Vision Agent<br/>(OpenCV: ELA, Stamp Masking, Font Incongruity)"]:::agent
+        QRSignatureAgent["Digital Signature & QR Agent<br/>(X.509 PKI & QR Payload Decrypter)"]:::agent
     end
 
-    subgraph AIEngineLayer["🧠 AI Scrutiny Microservice (Python 3.11 + FastAPI)"]
-        subgraph LangGraphEngine["LangGraph StateGraph Workflow Orchestrator"]
-            LG_Ingest["1. Ingestion & Preprocessing"]
-            LG_OCR["2. OCR & Field Normalization"]
-            LG_Forensics["3. Forensics & Anomaly Detection"]
-            LG_AuthVerify["4. External Authority Verification"]
-            LG_APH["5. Deterministic APH Rules Engine"]
-            LG_CV["6. CV Infrastructure Scrutiny"]
-            LG_Synthesize["7. Finding Aggregation & Risk Scoring"]
-        end
+    CategoryRouter --> ParserAgent
+    CategoryRouter --> OCRAgent
+    CategoryRouter --> ForensicAgent
+    CategoryRouter --> QRSignatureAgent
+
+    ParserAgent --> JoinExtracted["State Reducer: Consolidate Document Extractions"]:::process
+    OCRAgent --> JoinExtracted
+    ForensicAgent --> JoinExtracted
+    QRSignatureAgent --> JoinExtracted
+
+    %% Stage 2: Cross-Verification & External Issuing Authority Gateway
+    subgraph CrossVerificationSwarm ["Phase 2: Triangulation & External Authority Bridge"]
+        CrossDocAgent["Cross-Document Consistency Agent<br/>(Land / Faculty / Building / Intake Matcher)"]:::agent
+        IssuingAuthAgent["Issuing Authority Bridge Agent<br/>(DigiLocker, State Bhulekh, e-District Gateway)"]:::agent
+    end
+
+    JoinExtracted --> CrossDocAgent
+    JoinExtracted --> IssuingAuthAgent
+
+    CrossDocAgent --> AggregateEvidence["Aggregate Evidence Graph"]:::process
+    IssuingAuthAgent --> AggregateEvidence
+
+    %% Stage 3: APH Regulatory Rules Engine
+    subgraph ComplianceStage ["Phase 3: Regulatory Compliance Verification"]
+        APHRulesAgent["Regulatory Compliance Agent<br/>(AICTE APH 2024-27 Norms Matrix)"]:::agent
+        LandCalc["Campus Land & Zone Norms Checker"]:::tool
+        FacultyCalc["Cadre Ratio & SFR Checker (1:15 / 1:20)"]:::tool
+        InfraCalc["Lab Area & Built-Up Area Calculator"]:::tool
+    end
+
+    AggregateEvidence --> APHRulesAgent
+    APHRulesAgent --> LandCalc
+    APHRulesAgent --> FacultyCalc
+    APHRulesAgent --> InfraCalc
+
+    LandCalc --> RuleSynthesis["Synthesize Compliance Findings"]:::process
+    FacultyCalc --> RuleSynthesis
+    InfraCalc --> RuleSynthesis
+
+    RuleSynthesis --> DSSAgent["Explainable DSS Generator Agent<br/>(Generates Bounding Box Visuals & Citation Cards)"]:::agent
+
+    DSSAgent --> CheckAnomalies{"Anomalies or Deficiencies Detected?"}:::process
+
+    CheckAnomalies -->|High Severity Flag| FlagReview["Tag: SUSPECTED_ANOMALY<br/>Route to Senior Scrutiny Committee"]:::error
+    CheckAnomalies -->|Deficiencies Detected| FlagDeficiency["Tag: DEFICIENCY_FLAGGED<br/>Draft Rectification Notice"]:::error
+    CheckAnomalies -->|All Clear| FlagPassed["Tag: PRE_VALIDATED_CLEAR<br/>Eligible for Streamlined Approval"]:::process
+
+    FlagReview --> StateCommit["Persist Validation Report & Findings to DB"]:::process
+    FlagDeficiency --> StateCommit
+    FlagPassed --> StateCommit
+
+    StateCommit --> FinalOutput([Return Explainable Verification Dossier]):::startEnd
+```
+
+---
+
+## 4. Project Development & CI/CD Workflow
+
+Illustrates the Git feature-branch workflow, automated multi-runtime CI pipelines via GitHub Actions, containerized unit and integration testing, security scanning, and deployment stages.
+
+```mermaid
+graph TD
+    classDef default fill:#1e1e2e,stroke:#cdd6f4,stroke-width:2px,color:#cdd6f4;
+    classDef local fill:#a6e3a1,stroke:#a6e3a1,stroke-width:2px,color:#11111b;
+    classDef ci fill:#89b4fa,stroke:#89b4fa,stroke-width:2px,color:#11111b;
+    classDef cd fill:#f9e2af,stroke:#f9e2af,stroke-width:2px,color:#11111b;
+
+    subgraph LocalDev ["Local Engineering"]
+        GitBranch["Feature Branch (feat/cross-doc-check)"]:::local
+        LocalRun["Local Testing (npm test / pytest)"]:::local
+        GitCommit["Atomic Commit & Sign-off"]:::local
+        GitPush["Push to Remote GitHub Repository"]:::local
+
+        GitBranch --> LocalRun --> GitCommit --> GitPush
+    end
+
+    subgraph ActionsCI ["GitHub Actions Automated CI"]
+        PRTrigger["Pull Request Triggered"]:::ci
         
-        PyMuPDF["PyMuPDF & pdfplumber"]
-        PaddleOCR["PaddleOCR Engine"]
-        CV_Engine["OpenCV 4.8 Forensics"]
-        LLM_Adapter["Explainability LLM Adapter<br/>(Structured Evidence Summarizer)"]
+        subgraph ParallelChecks ["Parallel Verification Jobs"]
+            FE_Lint["Frontend: ESLint + Vitest + Typecheck"]:::ci
+            BE_Lint["Backend: ESLint + Jest + Zod Schema Validation"]:::ci
+            AI_Tests["AI Service: Pytest + Forensic Vision Algorithm Checks"]:::ci
+            Security_Scan["Security: Trivy Container Scan + npm audit + Bandit"]:::ci
+        end
+
+        DockerBuild["Multi-Stage Docker Image Compilation"]:::ci
+        MergeMain["Merge to Main Branch"]:::ci
+
+        PRTrigger --> FE_Lint
+        PRTrigger --> BE_Lint
+        PRTrigger --> AI_Tests
+        PRTrigger --> Security_Scan
+
+        FE_Lint --> DockerBuild
+        BE_Lint --> DockerBuild
+        AI_Tests --> DockerBuild
+        Security_Scan --> DockerBuild
+
+        DockerBuild --> MergeMain
     end
 
-    subgraph ExternalServices["🌐 External Verification Services (Real & Mock Sandbox)"]
-        DigiLocker["DigiLocker / National Academic Depository"]
-        StateLand["State Land Record APIs (Bhoomi/AnyRoR)"]
-        COA["Council of Architecture / CoA Register"]
-        AffiliationUni["Affiliating University Portals"]
+    subgraph CD_Deployment ["Continuous Deployment & Container Orchestration"]
+        DeployTrigger["CD Action Triggered on Main"]:::cd
+        RegistryPush["Push Images to Container Registry (GHCR / Docker Hub)"]:::cd
+        ComposeDeploy["Docker Compose Deployment on Server"]:::cd
+        HealthProbe["Post-Deploy Health Checks (/api/health & /ai/health)"]:::cd
+        ProductionReady(["VerifyAI Production Active"]):::cd
+
+        MergeMain --> DeployTrigger --> RegistryPush --> ComposeDeploy --> HealthProbe --> ProductionReady
     end
 
-    %% Client to Gateway
-    UI_Inst -->|HTTPS / REST| DocManager
-    UI_Admin -->|HTTPS / REST| AuthService
-    UI_Admin -->|WebSocket Live Feed| AuditRouter
-    UI_Regional -->|HTTPS / REST| AuthService
-
-    %% Gateway to Storage & Queues
-    DocManager -->|Upload File Stream| MinIO
-    DocManager -->|Persist Metadata| Postgres
-    DocManager -->|Enqueue Scrutiny Job| RedisCache
-
-    %% Gateway to AI Microservice
-    RedisCache -->|Trigger Worker| LangGraphEngine
-    AuthService -->|Internal RPC / REST| LangGraphEngine
-
-    %% AI Microservice Inner Connections
-    LG_Ingest --> PyMuPDF
-    LG_OCR --> PaddleOCR
-    LG_Forensics --> CV_Engine
-    LG_AuthVerify --> ExternalServices
-    LG_Synthesize --> LLM_Adapter
-
-    %% AI Microservice to Persistence
-    LangGraphEngine -->|Read Original Files| MinIO
-    LangGraphEngine -->|Write Annotated Evidence Crops| MinIO
-    LangGraphEngine -->|Save Findings, Scores & Audit Log| Postgres
+    GitPush --> PRTrigger
 ```
-
-### 3.2 Microservice Breakdown
-
-1. **Frontend Client (`/frontend`):**
-   - Built with **React 18**, **TypeScript**, **Tailwind CSS**, and **shadcn/ui**.
-   - Features: Split-screen document inspection viewer (PDF.js + canvas annotation), side-by-side institutional claim vs. extracted truth, deficiency slip generator, real-time status tracker via WebSockets.
-2. **Main Gateway Backend (`/backend-gateway`):**
-   - Built with **Node.js**, **Express**, and **TypeScript**.
-   - Handles multi-role authentication (Institution User, Scrutiny Officer, Regional Director, Super Admin), role-based access control (RBAC), file upload pipeline, Zod payload validation, and event streaming.
-3. **AI & Forensics Engine (`/ai-engine`):**
-   - Built with **Python 3.11** and **FastAPI**.
-   - Encapsulates **LangGraph**, **PaddleOCR**, **PyMuPDF**, and **OpenCV**.
-   - Operates asynchronously via Redis queues for long-running document scrutiny workloads.
-4. **Persistence Layer:**
-   - **PostgreSQL 16:** Relational modeling of applications, document metadata, rule trees, calculated compliance ratios, and tamper-evident audit logs.
-   - **MinIO S3:** Stores raw institutional PDF/JPEG uploads, encrypted at rest (AES-256), along with forensic heatmaps and evidence bounding-box crops.
 
 ---
 
-## 4. AI & Workflow Orchestration (LangGraph Engine)
+## 5. Complete System Architecture
 
-The verification lifecycle is structured as a deterministic, state-driven workflow using **LangGraph**. Unlike uncontrolled autonomous LLM agents that hallucinate facts or decisions, LangGraph enforces strict node-by-node execution with explicit state typing, validation checkpoints, and fallback mechanisms.
-
-### 4.1 LangGraph StateGraph Workflow Diagram
+Maps the system across functional boundaries: Frontend Client Tier, Node.js Gateway & Orchestrator Tier, Python AI & Forensic Microservice Tier, LangGraph Agent Cluster, External Verification Repositories, and Persistent Storage Vaults.
 
 ```mermaid
-stateDiagram-v2
-    [*] --> IngestDocumentPackage: Application Received
-    
-    IngestDocumentPackage --> DocumentClassification: Parse PDF Streams
-    
-    state DocumentClassification {
-        [*] --> ClassifyDocType
-        ClassifyDocType --> CheckChecklistCompleteness: Map to APH Category
-        CheckChecklistCompleteness --> MissingDocsAlert: Missing Required Docs
-        CheckChecklistCompleteness --> Preprocessing: All Required Present
-    }
+graph TD
+    %% Styling
+    classDef default fill:#1e1e2e,stroke:#cdd6f4,stroke-width:2px,color:#cdd6f4;
+    classDef frontend fill:#89b4fa,stroke:#89b4fa,stroke-width:2px,color:#11111b;
+    classDef backend fill:#a6e3a1,stroke:#a6e3a1,stroke-width:2px,color:#11111b;
+    classDef ai fill:#f9e2af,stroke:#f9e2af,stroke-width:2px,color:#11111b;
+    classDef db fill:#fab387,stroke:#fab387,stroke-width:2px,color:#11111b;
+    classDef ext fill:#f5c2e7,stroke:#f5c2e7,stroke-width:2px,color:#11111b;
 
-    MissingDocsAlert --> FlagDeficiency: Record Item in Deficiency Slip
-    
-    Preprocessing --> OCRAndExtraction: PyMuPDF + PaddleOCR
-    
-    state OCRAndExtraction {
-        [*] --> ExtractTextAndTables
-        ExtractTextAndTables --> ExtractEntities: Land Area, Reg Nos, Dates, Faculty Names
-        ExtractEntities --> NormalizeEntities: Standardize Units & Formats
-    }
+    %% Client Tier
+    subgraph ClientTier ["1. Frontend Client Tier (React 18 + TypeScript + Vite + Tailwind + shadcn/ui)"]
+        UI_Institute["Institution Portal (Upload & Live Pre-check)"]:::frontend
+        UI_Officer["Scrutiny Officer Workspace (Side-by-Side Review)"]:::frontend
+        UI_Admin["Regional Director Dashboard (Analytics & Overrides)"]:::frontend
+        PDFRenderer["React-PDF / PDF.js Engine with Bounding Box SVG Overlays"]:::frontend
+        ClientState["TanStack React Query Cache & Zod Client Schemas"]:::frontend
+    end
 
-    NormalizeEntities --> ParallelChecks: Dispatch Extracted State
-    
-    state ParallelChecks {
-        direction LR
-        state ForensicsAnalysis {
-            [*] --> ErrorLevelAnalysis
-            ErrorLevelAnalysis --> MetadataAudit
-            MetadataAudit --> FontConsistencyCheck
-        }
-        state AuthorityVerification {
-            [*] --> QRSignatureDecoder
-            QRSignatureDecoder --> DigiLockerAPICheck
-            DigiLockerAPICheck --> LandRegistryCheck
-        }
-        state DeterministicAPHCompliance {
-            [*] --> CheckLandAndBuildingNorms
-            CheckLandAndBuildingNorms --> CheckFSRAndFacultyCadre
-            CheckFSRAndFacultyCadre --> CheckTERFeeAndAffiliation
-        }
-        state InfrastructureCV {
-            [*] --> GeotagExifAudit
-            GeotagExifAudit --> FloorPlanDimensionOCR
-        }
-    }
+    %% Gateway Tier
+    subgraph GatewayTier ["2. Application Gateway & Controller Tier (Node.js + Express + TypeScript)"]
+        APIRouter["Express REST API Router"]:::backend
+        
+        subgraph Middlewares ["Security & Governance Middlewares"]
+            RateLimit["Rate Limiter & DDoS Guard"]:::backend
+            HelmetShield["Helmet Security Headers & CORS"]:::backend
+            JWT_RBAC["JWT & Fine-Grained RBAC Middleware"]:::backend
+            ZodValidator["Zod Input / DTO Schema Validator"]:::backend
+            AuditInterceptor["SHA-256 Tamper-Evident Audit Interceptor"]:::backend
+        end
 
-    ParallelChecks --> SynthesizeFindings: Merge Evidence & Flags
+        TaskManager["Async Queue & Pipeline Manager (BullMQ / In-Memory Worker)"]:::backend
+        DocVaultManager["Encrypted File Vault Manager"]:::backend
+    end
 
-    state SynthesizeFindings {
-        [*] --> CheckHighSeverityAnomalies
-        CheckHighSeverityAnomalies --> HighRiskFlag: Forgery / Gross Deficiency Found
-        CheckHighSeverityAnomalies --> AdvisorySummary: Valid / Minor Deficiencies
-        HighRiskFlag --> CompileEvidence
-        AdvisorySummary --> CompileEvidence
-    }
+    %% AI Microservice Tier
+    subgraph AIServiceTier ["3. Forensic & Extraction Microservice (Python 3.11 + FastAPI)"]
+        FastAPIRouter["FastAPI Async API Gateway"]:::ai
+        
+        subgraph CoreEngines ["Processing Engines"]
+            PyMuPDFEngine["PyMuPDF (Text, Coordinates & Metadata Engine)"]:::ai
+            PaddleOCREngine["PaddleOCR Multilingual Engine (Orientation & Deskewing)"]:::ai
+            OpenCVForensics["OpenCV Forensic Lab (ELA, Clone & Stamp Masking)"]:::ai
+            PKIScanner["PKI Digital Signature & QR Decryptor"]:::ai
+        end
 
-    CompileEvidence --> HumanInTheLoopReview: Render in Scrutiny Cockpit
-    
-    state HumanInTheLoopReview {
-        [*] --> OfficerInspection
-        OfficerInspection --> ApproveWithNotes: Officer Validates & Concurs
-        OfficerInspection --> IssueDeficiencyNotice: Officer Requests Rectification
-        OfficerInspection --> TriggerPhysicalInspection: Infrastructure Discrepancy
-    }
+        %% LangGraph Agent Swarm
+        subgraph LangGraphCluster ["LangGraph Multi-Agent Orchestration Swarm"]
+            SupervisorNode["Supervisor Node (State Dispatcher)"]:::ai
+            CrossDocNode["Cross-Document Consistency Agent"]:::ai
+            APHComplianceNode["APH Regulatory Rule Engine"]:::ai
+            DSSReporterNode["Explainable DSS Report Generator"]:::ai
+        end
+    end
 
-    ApproveWithNotes --> GenerateScrutinyReport: Emit Signed Report & Hash to Audit Log
-    IssueDeficiencyNotice --> GenerateScrutinyReport
-    TriggerPhysicalInspection --> GenerateScrutinyReport
-    
-    GenerateScrutinyReport --> [*]
+    %% Storage Tier
+    subgraph StorageTier ["4. Persistent Storage & Ledger Tier"]
+        PostgresDB[(PostgreSQL 16: Relational Records, Findings & Audit Ledger)]:::db
+        ObjectStorage[(MinIO / AWS S3: Encrypted Document Repository)]:::db
+        Redis[(Redis: Task Queue & Extraction Cache)]:::db
+    end
+
+    %% External Repositories Tier
+    subgraph ExternalTier ["5. Authorized Verification Repositories (Mock / Official)"]
+        DigiLockerAPI["DigiLocker Document Verification Gateway"]:::ext
+        StateLandRegistry["State Revenue / Bhulekh Land Records API"]:::ext
+        UniversityAffiliation["Affiliating University NOC Portal"]:::ext
+        FireSafetyAPI["State Fire Services Clearance API"]:::ext
+    end
+
+    %% Connections
+    UI_Institute --> ClientState
+    UI_Officer --> PDFRenderer
+    UI_Officer --> ClientState
+    ClientState -->|JSON / Multi-part Uploads| APIRouter
+
+    APIRouter --> RateLimit --> HelmetShield --> JWT_RBAC --> ZodValidator --> AuditInterceptor
+    AuditInterceptor --> TaskManager
+    TaskManager --> DocVaultManager
+
+    DocVaultManager --> ObjectStorage
+    TaskManager --> Redis
+
+    TaskManager -->|Dispatch Scan Jobs| FastAPIRouter
+    FastAPIRouter --> CoreEngines
+    CoreEngines --> LangGraphCluster
+
+    LangGraphCluster --> ExternalTier
+    LangGraphCluster -->|Findings & Bounding Boxes| FastAPIRouter
+    FastAPIRouter -->|Structured JSON Dossier| TaskManager
+
+    TaskManager --> PostgresDB
+    AuditInterceptor --> PostgresDB
+    PostgresDB -->|Status & Dossier Payloads| ClientState
 ```
-
-### 4.2 Workflow Steps & Conditional Fallbacks
-
-```python
-# Conceptual LangGraph State Schema
-class ApplicationScrutinyState(TypedDict):
-    application_id: str
-    institution_id: str
-    category: str  # e.g., "Extension_of_Approval", "New_Institution"
-    documents: List[DocumentMetadata]
-    extracted_entities: Dict[str, Any]
-    forensic_anomalies: List[AnomalyFinding]
-    authority_verification_results: List[AuthVerificationResult]
-    aph_compliance_results: Dict[str, ComplianceCheck]
-    cv_infrastructure_findings: List[CVFinding]
-    overall_risk_score: float
-    evidence_crop_urls: List[str]
-    audit_trail: List[AuditLogEntry]
-    officer_action: Optional[str]
-```
-
-1. **`IngestDocumentPackage`**: Validates file hashes (SHA-256) to ensure no corrupt or duplicate files exist.
-2. **`DocumentClassification`**: Matches document titles, headers, and stamps to the expected APH checklist for the chosen category (e.g., Engineering UG, Management PG, Pharmacy).
-3. **`OCRAndExtraction`**: Dual-engine extraction using PyMuPDF for native vector PDFs and PaddleOCR for scanned raster images.
-4. **`ForensicsAnalysis`**: Runs Error Level Analysis (ELA) to detect JPEG resaving artifacts, pixel splices, and cloned stamps.
-5. **`AuthorityVerification`**: Reads QR codes and embedded digital signatures (X.509 PKI). If external API is unreachable, transitions gracefully to `SOURCE_UNAVAILABLE` and triggers a fallback manual verification flag without halting the pipeline.
-6. **`DeterministicAPHCompliance`**: Mathematically evaluates requirements (Land Area in Acres, Carpet Area per student, Faculty-Student Ratio 1:15 or 1:20, Cadre Ratio 1:2:6).
-7. **`HumanInTheLoopReview`**: Suspends workflow execution and presents the comprehensive dossier to the AICTE Scrutiny Officer. The system resumes execution only when the authorized officer submits a formal disposition.
 
 ---
 
-## 5. Core Modules & Technical Implementation
+### 5a. Architecture Walkthrough & Execution Trace
 
-### 5.1 Module A: Document Extraction & Classification (PaddleOCR + PyMuPDF)
-- **Hybrid Extraction Pipeline:** Detects whether an uploaded PDF has native embedded text streams or is a flat scanned image.
-- **Table Structure Extraction:** Uses `pdfplumber` and PaddleOCR Table Recognition to parse multi-column tables such as Faculty Lists (Name, PAN, Aadhaar hash, Designation, Date of Joining, Pay Scale) and Land Particulars (Khasra/Survey Numbers, Plot area, FSI).
-- **Entity Normalization:** Standardizes dates (`DD/MM/YYYY`), currency amounts (TER processing fee payments), and unit conversions (acres, square meters, square feet) to canonical SI units for automated comparison.
-
-### 5.2 Module B: Forensics & Anomaly Detection (OpenCV + Metadata Analysis)
-- **Error Level Analysis (ELA):** Analyzes compression ratios across the document canvas. Re-saved or digitally pasted signatures, altered dates, and spliced text blocks stand out with high ELA variance.
-- **Copy-Move Forgery Detection:** Identifies duplicated seals, stamps, or official signatures copied from older approvals or other institutes.
-- **PDF Metadata Consistency Scrutiny:** Cross-references the PDF creation date, modification date, author software (e.g., Adobe Photoshop, Canva vs. Government Printing Office/Scanner drivers), and fonts used (detecting localized font variations in numeric fields).
-
-### 5.3 Module C: Authority Verification (DigiLocker, QR, e-Sign, Land Registries)
-- **Digital Signature (PAdES / PKI) Verification:** Extracts X.509 certificates from digitally signed documents (e.g., municipal approvals, chartered accountant certificates), verifying certificate chain, expiry, and revocation status via CRL/OCSP.
-- **QR Code Verification:** Automatically scans and decodes high-density QR codes on University Affiliation letters, State Board certificates, and e-Stamps; cross-verifies decoded payload against the application's declared text.
-- **DigiLocker / National Academic Depository (NAD) Bridge:** Connects to standard DigiLocker APIs (or sandbox simulation for demo) to verify ownership and document hashes directly from issuing authorities.
-- **Graceful Degradation Statuses:** Every verification yields one of six explicit statuses:
-  `VERIFIED`, `MISMATCH_DETECTED`, `EXPIRED`, `VERIFICATION_PENDING`, `SOURCE_UNAVAILABLE`, `MANUAL_REVIEW_REQUIRED`.
-
-### 5.4 Module D: Deterministic APH Regulatory Compliance Engine
-This module contains zero probabilistic generative text for decision making. Instead, it is a strictly typed Python rule matrix enforcing the AICTE Approval Process Handbook:
-- **Land Norms Check:** Minimum contiguous land requirements based on Location Category (Mega Cities, Urban, Rural) and discipline.
-- **Faculty Cadre Ratio:** Verifies Professor : Associate Professor : Assistant Professor ratio ($1 : 2 : 6$) and overall Faculty-Student Ratio ($1:15$ for Engineering UG, $1:20$ for Management).
-- **Built-Up Carpet Area Calculation:** Aggregates Instructional Area, Administrative Area, Amenities Area, and Circulation Area against prescribed square meter minimums.
-- **Mandatory Deficiencies Detection:** Checks compliance for barrier-free environments (ramps, braille lifts), fire safety certificates, anti-ragging committees, internal complaint committees (ICC), and Grievance Redressal Mechanisms.
-
-### 5.5 Module E: Infrastructure CV Analysis & Geotag Verification
-- **EXIF Geotag Extraction:** Parses latitude, longitude, altitude, and timestamp metadata from mandatory institution-submitted infrastructure photographs.
-- **Geofence Matching:** Compares photo EXIF coordinates against the survey boundaries declared in the registered land deeds to detect off-site photograph submissions.
-- **Floor Plan Computer Vision:** Uses OpenCV edge detection and OCR to read room labels and dimensions on architect-certified blueprints, validating whether declared lab spaces meet minimum area specifications.
-
-### 5.6 Module F: Scrutiny Officer Dashboard & Human-in-the-Loop Review
-- **Split-Screen Evidence Inspector:** The left pane displays the parsed AICTE application fields with colour-coded compliance badges; the right pane renders the original PDF document with the relevant evidence highlighted in bounding boxes.
-- **Advisory Risk Indicator:** Computes an aggregated Risk Index based on weighted severity:
-  $$\text{Risk Score} = \sum (w_i \cdot \text{Severity}_i)$$
-- **Deficiency Slip Generation:** Automatically drafts a downloadable, evidence-linked deficiency notice if mandatory compliance thresholds are not met, allowing institutes a standard cure period.
-
-### 5.7 Module G: Immutable Audit Trail & Evidence Chains
-- **Hash-Chained Audit Log:** Every action (document upload, rule trigger, verification response, officer annotation, committee decision) is serialized into an append-only, SHA-256 hash-chained ledger.
-- **Tamper-Evident Accountability:** Guarantees that neither institutional applicants nor internal officers can alter historic findings or override flags without an immutable audit record.
-
----
-
-## 6. Sequence Flow Diagram
+Here is the exact step-by-step sequence diagram when an institution submits a set of approval documents and the system executes extraction, anomaly checks, authority calls, and APH compliance:
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Institute as 🏫 Institution User
-    participant Gateway as 🛡️ Node.js Gateway
-    participant MinIO as 🗄️ MinIO S3
-    participant DB as 🐘 PostgreSQL
-    participant AI as 🧠 FastAPI + LangGraph
-    participant ExtAuth as 🌐 Issuing Authority (DigiLocker/APIs)
-    actor Officer as 👨‍💼 AICTE Scrutiny Officer
+    actor Inst as Technical Institution
+    participant FE as React Client (Vite)
+    participant GW as Node.js Gateway (Express)
+    participant S3 as MinIO / Object Store
+    participant AI as FastAPI (PyMuPDF + PaddleOCR)
+    participant LG as LangGraph Agent Swarm
+    participant Auth as External Authority API (DigiLocker)
+    participant DB as PostgreSQL 16
+    actor Officer as AICTE Scrutiny Officer
 
-    Institute->>Gateway: 1. Submit Application Package (Data + PDFs)
-    Gateway->>MinIO: 2. Stream & Store Raw PDFs (AES-256)
-    Gateway->>DB: 3. Create Application Record & Status = 'UNDER_SCRUTINY'
-    Gateway->>AI: 4. Dispatch Async Processing Job (AppID, DocIDs)
-    
-    activate AI
-    AI->>MinIO: 5. Fetch Document Streams
-    AI->>AI: 6. Run PaddleOCR & PyMuPDF (Text/Table Parsing)
-    AI->>AI: 7. Run OpenCV ELA & Metadata Anomaly Engine
-    
-    AI->>ExtAuth: 8. Verify QR, e-Signatures & Certificates
-    ExtAuth-->>AI: 9. Return Authority Status (Verified / Mismatch)
-    
-    AI->>AI: 10. Execute Deterministic APH Rule Matrix
-    AI->>MinIO: 11. Save Bounding-Box Evidence Crops & ELA Heatmaps
-    AI->>DB: 12. Persist Extraction, Findings & Risk Scores
-    deactivate AI
+    Inst->>FE: Uploads EoA Dossier (Land Deed, Fire NOC, Building Plan, Affidavit)
+    FE->>GW: POST /api/applications/validate (multipart/form-data)
+    GW->>GW: Zod schema & JWT validation
+    GW->>S3: Encrypt & store raw PDF documents
+    GW->>DB: Create application record (Status: PROCESSING)
+    GW->>AI: Trigger processing pipeline POST /ai/v1/scrutinize {appId, fileUris}
 
-    Gateway->>DB: 13. Append System Event to Audit Ledger
-    Gateway-->>Officer: 14. Push WebSocket Alert: "Application Ready for Scrutiny"
-    
-    Officer->>Gateway: 15. Open Scrutiny Cockpit (AppID)
-    Gateway-->>Officer: 16. Return Evidence-Linked Dossier & Split-Screen Data
-    
-    alt Discrepancy Found / Officer Requests Fix
-        Officer->>Gateway: 17a. Issue Evidence-Backed Deficiency Slip
-        Gateway->>DB: 18a. Update Status = 'DEFICIENCY_ISSUED' + Record Audit Log
-        Gateway-->>Institute: 19a. Notify Institution for Rectification
-    else Verified & Compliant
-        Officer->>Gateway: 17b. Record Scrutiny Recommendation (Approved)
-        Gateway->>DB: 18b. Update Status = 'SCRUTINY_RECOMMENDED' + Hash Audit Chain
-        Gateway-->>Institute: 19b. Notify Progress to Regional Committee
+    critical Stage 1: Document Parsing & Forensics
+        AI->>AI: PyMuPDF: Extract vector text, page structures, font tables
+        AI->>AI: PaddleOCR: Multilingual scan extraction with bounding boxes
+        AI->>AI: OpenCV: Compute Error Level Analysis (ELA) for pixel compression anomalies
+        AI->>AI: Scan for X.509 PKI signatures and dynamic QR codes
     end
+
+    AI->>LG: Initialize LangGraph State with Extracted Tokens & Forensics
+    
+    critical Stage 2: LangGraph Orchestration & Cross-Checks
+        LG->>LG: CategoryRouter: Load APH 2024-27 norms for category (Engineering Urban)
+        LG->>LG: CrossDocAgent: Triangulate Land Acreage (Deed: 2.50 vs Portal: 2.50 vs Affidavit: 2.50)
+        LG->>Auth: Query DigiLocker / State Portal for Fire NOC Ref #
+        Auth-->>LG: Return Certificate Metadata & Expiry Date
+        LG->>LG: APHComplianceNode: Compute Faculty Cadre (1:2:6) and Land Thresholds
+        LG->>LG: DSSReporterNode: Compile Explainable Deficiency Dossier with PDF bounding boxes
+    end
+
+    LG-->>AI: Completed State & Evidence Dossier
+    AI-->>GW: Return Structured JSON Scrutiny Dossier
+    GW->>DB: Save Findings, Anomaly Flags & Append SHA-256 Audit Block
+    GW->>DB: Update Application Status (Status: READY_FOR_REVIEW)
+    GW-->>FE: Stream WebSocket update: Processing Complete
+
+    Officer->>FE: Opens Officer Scrutiny Workspace
+    FE->>GW: GET /api/applications/{id}/dossier
+    GW-->>FE: Return Dossier + PDF Coordinates + ELA Heatmap
+    FE->>Officer: Displays interactive split-screen with highlighted bounding boxes
+    Officer->>GW: POST /api/applications/{id}/decide {decision: APPROVE_WITH_REMARKS}
+    GW->>DB: Append Officer Signature to Immutable Audit Ledger
+    GW-->>FE: Confirmation Ack (Audit Digest SHA-256 generated)
 ```
 
 ---
 
-## 7. Database Schema & Data Modeling (ERD)
+## 6. Multi-Agent Swarm — Agent I/O Specifications
 
-### 7.1 Entity-Relationship Diagram
+The LangGraph orchestration swarm distributes specialized verification tasks across discrete, state-bounded agents:
+
+| Agent Name | Primary Responsibility | Input Parameters | Output Products |
+| :--- | :--- | :--- | :--- |
+| **CategoryRouter** | Identifies application type and loads the appropriate AICTE Handbook checklist. | `application_type`, `institute_category`, `program_list` | `active_aph_checklist`, `mandatory_document_keys` |
+| **VectorParserAgent** | Extracts native digital text, bounding boxes, tables, and PDF font metrics. | `raw_pdf_bytes`, `page_indices` | `structured_text_blocks`, `bounding_boxes`, `pdf_metadata` |
+| **MultilingualOCRAgent** | Executes optical character recognition on scanned deeds, affidavits, and seals. | `scanned_image_arrays`, `language_hints` (hi, en) | `ocr_tokens`, `word_coordinates`, `confidence_scores` |
+| **ForensicVisionAgent** | Detects digital tampering via ELA, copy-move cloning, and seal edge incongruities. | `image_matrices`, `compression_quality=95` | `ela_tamper_score`, `suspicious_bounding_boxes`, `heatmap_png` |
+| **CrossDocConsistencyAgent** | Correlates extracted values across separate documents to detect factual contradictions. | `extracted_entities_map`, `portal_declared_fields` | `discrepancy_flags`, `mismatch_deltas`, `evidence_pairs` |
+| **IssuingAuthorityAgent** | Queries digital authorities (DigiLocker, State Land Portals, e-District QR). | `doc_ref_no`, `qr_payload`, `authority_type` | `auth_status` *(VERIFIED / MISMATCH / EXPIRED)*, `source_stamp` |
+| **APHComplianceAgent** | Evaluates institutional parameters against mathematical AICTE APH regulatory norms. | `total_intake`, `land_area`, `faculty_list`, `built_up_area` | `compliance_pass_fail_map`, `shortfall_amounts`, `aph_clause_citations` |
+| **DSSGeneratorAgent** | Synthesizes all findings into an explainable, evidence-backed Deficiency Scrutiny Sheet. | `all_agent_states`, `audit_trace` | `deficiency_memo_pdf`, `officer_action_summary`, `sha256_digest` |
+
+---
+
+## 7. Forensic Vision & Manipulation Detection Engine
+
+VerifyAI incorporates a multi-spectrum forensic computer vision pipeline to protect the regulatory process from altered certificates:
+
+```
+                      [ Uploaded Document Image / PDF Page ]
+                                        │
+           ┌────────────────────────────┼────────────────────────────┐
+           ▼                            ▼                            ▼
+  [ Error Level Analysis ]     [ Font Incongruity Check ]   [ Seal & Stamp Verifier ]
+  • Resaves at 95% quality     • Measures baseline variance • Isolates circular seals
+  • Computes pixel diff scale  • Detects mismatched kerning • Checks color distribution
+  • Generates high-loss mask   • Flags overlaid font glyphs • Masks duplicate stamp uses
+           │                            │                            │
+           └────────────────────────────┼────────────────────────────┘
+                                        ▼
+                   [ Forensic Fusion & Confidence Scorer ]
+                     ├── Green: Natural document compression
+                     ├── Orange: Minor artifacting (Scanned reprint)
+                     └── Red: Pixel manipulation detected (Date / Number altered)
+```
+
+1. **Error Level Analysis (ELA)**:
+   - Resaves digital images at a known compression baseline (95%) and evaluates the matrix difference:
+     $$\Delta(x, y) = |I_{\text{original}}(x, y) - I_{\text{recompressed}}(x, y)| \times \text{Scale Factor}$$
+   - Pixels altered with editing software (Photoshop, Canva, Acrobat Edit) display sharply elevated error levels compared to the original background substrate.
+2. **Font & Metadata Forensics**:
+   - Analyzes font resource tables embedded inside PDF objects. Flags documents containing multiple embedded subsets for single numerical fields (e.g., date modified from `2023` to `2027`).
+   - Parses EXIF and XMP streams to flag modifying software signatures (`CreatorTool: Adobe Photoshop`, mismatched `ModifyDate` vs `CreateDate`).
+3. **Cross-Institutional Perceptual Hashing (pHash)**:
+   - Generates 64-bit DCT perceptual hashes for submitted building photographs and structural floorplans.
+   - Detects if an identical building or computer center photograph has been recycled across multiple distinct institutional applications.
+
+---
+
+## 8. Issuing Authority Verification Gateway
+
+VerifyAI provides automated connectors to authorized digital issuing repositories:
+
+```
+                            [ VerifyAI Gateway ]
+                                     │
+           ┌─────────────────────────┼─────────────────────────┐
+           ▼                         ▼                         ▼
+   [ DigiLocker API ]        [ State Land Registry ]    [ PKI & Dynamic QR ]
+   • Fetches verified        • Queries Land Records     • Decrypts 2D Secure QR
+     Building Safety / NOC     (e.g., Bhulekh, AP       • Validates X.509 digital
+   • Compares cryptographic    Meebhoomi, TamilNilam)     signatures against CCA
+     URI and timestamp       • Confirms survey / khata    India root certs
+```
+
+### Verification Status Enumeration
+Every document processed receives an unambiguous, auditable status tag:
+- `VERIFIED`: Exact match between document data and issuing authority database.
+- `MISMATCH_DETECTED`: Authority record located, but critical parameters (name, survey number, validity) differ.
+- `EXPIRED`: Document authentic, but current date exceeds statutory validity window.
+- `PENDING_SOURCE`: External issuing portal currently unreachable (automatic retry enqueued).
+- `SOURCE_UNAVAILABLE`: Document type has no public API; automatically flagged for **Manual Verification Mandatory**.
+
+---
+
+## 9. Error Handling, Fallback & Retry Strategy
+
+VerifyAI implements resilient fault-tolerance patterns across every operational boundary:
 
 ```mermaid
-erDiagram
-    INSTITUTIONS ||--o{ APPLICATIONS : submits
-    APPLICATIONS ||--o{ APPLICATION_DOCUMENTS : contains
-    APPLICATIONS ||--o{ COMPLIANCE_FINDINGS : generates
-    APPLICATIONS ||--o{ AUDIT_TRAIL_LOGS : records
-    APPLICATIONS ||--o{ OFFICER_REVIEWS : evaluated_by
-    APPLICATION_DOCUMENTS ||--o{ DOCUMENT_FORENSICS : subjected_to
-    APPLICATION_DOCUMENTS ||--o{ AUTHORITY_VERIFICATIONS : verified_via
-    RULES_MATRIX ||--o{ COMPLIANCE_FINDINGS : evaluated_against
+graph TD
+    classDef default fill:#1e1e2e,stroke:#cdd6f4,stroke-width:2px,color:#cdd6f4;
+    classDef process fill:#89b4fa,stroke:#89b4fa,stroke-width:2px,color:#11111b;
+    classDef retry fill:#fab387,stroke:#fab387,stroke-width:2px,color:#11111b;
+    classDef fallback fill:#f9e2af,stroke:#f9e2af,stroke-width:2px,color:#11111b;
+    classDef manual fill:#f38ba8,stroke:#f38ba8,stroke-width:2px,color:#11111b;
 
-    INSTITUTIONS {
-        uuid id PK
-        string aicte_permanent_id UK
-        string name
-        string institution_type
-        string state
-        string district
-        string address
-        timestamp created_at
-    }
+    OpRequest[Document Verification Call] --> ExecuteOp[Execute Primary Parser / API]:::process
+    ExecuteOp --> CheckResult{Success?}:::process
 
-    APPLICATIONS {
-        uuid id PK
-        uuid institution_id FK
-        string academic_year
-        string application_type
-        string current_status
-        float overall_risk_score
-        jsonb declared_data_payload
-        timestamp submitted_at
-    }
+    CheckResult -->|Yes| FinishOp[Update State & Return]:::process
+    CheckResult -->|Transient Failure / Timeout| EvaluateRetry{Retry Count < 3?}:::retry
 
-    APPLICATION_DOCUMENTS {
-        uuid id PK
-        uuid application_id FK
-        string document_type
-        string s3_file_key
-        string file_hash_sha256
-        int page_count
-        jsonb extracted_ocr_payload
-        timestamp uploaded_at
-    }
+    EvaluateRetry -->|Yes| ExponentialBackoff[Exponential Backoff: 2s, 4s, 8s]:::retry
+    ExponentialBackoff --> ExecuteOp
 
-    DOCUMENT_FORENSICS {
-        uuid id PK
-        uuid document_id FK
-        float ela_anomaly_score
-        boolean copy_move_detected
-        jsonb metadata_discrepancies
-        string heatmap_s3_key
-        string forensics_verdict
-        timestamp analyzed_at
-    }
+    EvaluateRetry -->|Exhausted| TriggerFallback[Trigger Secondary Fallback Pipeline]:::fallback
 
-    AUTHORITY_VERIFICATIONS {
-        uuid id PK
-        uuid document_id FK
-        string authority_source
-        string verification_mode
-        string verification_status
-        jsonb source_response_payload
-        string certificate_serial_no
-        timestamp verified_at
-    }
+    subgraph FallbackMatrix ["Degradation Fallback Strategy"]
+        VectorFail["PyMuPDF Vector Parse Failed ➔ Fallback to PaddleOCR Scan Engine"]:::fallback
+        OCRConfidenceLow["OCR Confidence < 70% ➔ Multi-angle Deskew & Contrast Normalization"]:::fallback
+        APIUnreachable["External Authority API Offline ➔ Tag as PENDING_SOURCE & Alert Officer"]:::fallback
+    end
 
-    RULES_MATRIX {
-        string rule_code PK
-        string aph_clause_reference
-        string category
-        string description
-        jsonb rule_logic_schema
-        string severity_level
-        boolean is_active
-    }
+    TriggerFallback --> VectorFail
+    TriggerFallback --> OCRConfidenceLow
+    TriggerFallback --> APIUnreachable
 
-    COMPLIANCE_FINDINGS {
-        uuid id PK
-        uuid application_id FK
-        string rule_code FK
-        string finding_type
-        string status
-        jsonb observed_value
-        jsonb prescribed_value
-        string evidence_crop_s3_key
-        string explanation
-        timestamp flagged_at
-    }
+    VectorFail --> FallbackEval{Fallback Resolved?}:::process
+    OCRConfidenceLow --> FallbackEval
+    APIUnreachable --> FallbackEval
 
-    AUDIT_TRAIL_LOGS {
-        uuid id PK
-        uuid application_id FK
-        string actor_id
-        string actor_role
-        string event_type
-        jsonb event_payload
-        string previous_log_hash
-        string current_log_hash
-        timestamp created_at
-    }
-
-    OFFICER_REVIEWS {
-        uuid id PK
-        uuid application_id FK
-        string officer_id
-        string committee_type
-        string decision
-        text remarks
-        string signed_token
-        timestamp reviewed_at
-    }
+    FallbackEval -->|Yes| FinishOp
+    FallbackEval -->|Critical Failure| ManualEscalation["Escalate to Manual Review Mandatory Flag<br/>(System never crashes or guesses)"]:::manual
+    ManualEscalation --> FinishOp
 ```
 
-### 7.2 Key Entity Specifications
+---
 
-- **`APPLICATIONS`**: Central tracking entity for institutional EoA / New Institution filings. Holds both raw institutional declared data and aggregated risk telemetry.
-- **`APPLICATION_DOCUMENTS`**: Encapsulates document instances with cryptographic SHA-256 checksums, normalized OCR text, and structured tabular JSON extracts.
-- **`DOCUMENT_FORENSICS`**: Stores computer vision error-level analysis (ELA) scores, digital splice flags, and S3 keys pointing to visual forensic heatmaps.
-- **`AUTHORITY_VERIFICATIONS`**: Tracks outbound verification checks against DigiLocker, e-Sign X.509 timestamps, and State Land Records with explicit verification statuses.
-- **`RULES_MATRIX`**: Normalized registry of AICTE APH clauses (e.g., `APH-2026-LAND-01`, `APH-2026-FSR-02`) containing exact mathematical evaluation schemas.
-- **`AUDIT_TRAIL_LOGS`**: Cryptographically chained audit records guaranteeing tamper-evidence and zero-repudiation across all administrative interactions.
+## 10. Deployment & Infrastructure Topology
+
+The production architecture is containerized via Docker and deployable across on-premise NIC/AICTE data centers or sovereign cloud providers:
+
+```
+                            [ External Traffic: HTTPS:443 ]
+                                          │
+                                          ▼
+                         [ NGINX Reverse Proxy & SSL Term ]
+                                          │
+            ┌─────────────────────────────┴─────────────────────────────┐
+            ▼                                                           ▼
+ [ Frontend React Static App ]                               [ Backend API Gateway ]
+   (Vite Build / NGINX Server)                                (Node.js 20 Express)
+   Port: 80 / 5173                                            Port: 5000
+                                                                        │
+                                       ┌────────────────────────────────┴────────────────┐
+                                       ▼                                                 ▼
+                          [ AI Microservice Engine ]                            [ Postgres 16 DB ]
+                           (Python 3.11 + FastAPI)                              Relational & Audit
+                           Port: 8000                                           Port: 5432
+                                       │
+                                       ├────────────────────────────────┐
+                                       ▼                                ▼
+                          [ MinIO S3 Object Store ]              [ Redis 7 Cache ]
+                           Document Encrypted Vault               Task Queue / PubSub
+                           Port: 9000 / 9001                      Port: 6379
+```
 
 ---
 
-## 8. Technology Stack Specification
+## 11. Security, DPDP Compliance & Statutory Safeguards
 
-| Component | Technology | Rationale & Selection Criteria |
-| :--- | :--- | :--- |
-| **Frontend Framework** | **React 18 + TypeScript + Vite** | High-performance SPA with complete type safety and rapid HMR development cycles. |
-| **Styling & Components** | **Tailwind CSS + shadcn/ui** | Accessible, enterprise-grade design system suitable for high-density administrative dashboards. |
-| **Document Viewer** | **PDF.js + HTML5 Canvas** | Custom split-screen viewer supporting bounding box overlays and forensic heatmap layers. |
-| **Main API Gateway** | **Node.js (v20) + Express + TypeScript** | Asynchronous I/O handling high-throughput multi-part uploads, JWT authentication, and RBAC. |
-| **Payload Validation** | **Zod** | Runtime schema validation matching strict TypeScript interfaces. |
-| **AI Microservice** | **Python 3.11 + FastAPI** | High-concurrency async ASGI framework ideal for AI model serving and image processing. |
-| **AI Workflow Engine** | **LangGraph + LangChain Core** | Stateful, multi-step orchestration with conditional branching, loops, and human-in-the-loop nodes. |
-| **OCR & Text Extraction**| **PaddleOCR + PyMuPDF (`fitz`)** | State-of-the-art multilingual text recognition and native PDF text/vector extraction. |
-| **Computer Vision Engine**| **OpenCV (`cv2`)** | Error Level Analysis (ELA), edge detection, and metadata forensics. |
-| **Database & ORM** | **PostgreSQL 16 + SQLAlchemy / Prisma** | ACID-compliant relational storage with JSONB support for semi-structured findings. |
-| **Object Storage** | **MinIO (Private S3 Compatible)** | Self-hosted, S3-compliant distributed object storage with server-side encryption. |
-| **Message Broker / Cache**| **Redis 7** | Reliable task queuing (BullMQ / Celery) for decoupled, long-running AI scrutiny tasks. |
-| **DevOps & Containers** | **Docker + Docker Compose** | Reproducible multi-container orchestration across staging and production environments. |
-| **Testing Suites** | **Vitest (TS) + Pytest (Python)** | High-coverage unit, integration, and rule validation testing. |
+### Non-Autonomous Decision-Support Mandate
+Under Section 10 of the AICTE Act and the official problem requirements, **VerifyAI does not autonomously reject or approve any application**.
+- All AI-generated outputs serve strictly as **advisory decision-support intelligence**.
+- Rejections, deficiency notices, and inspection orders require explicit review, written justification, and cryptographic e-Sign sign-off from authorized AICTE officers.
+
+### Data Protection & Cryptographic Audit Trails
+- **DPDP Act (2023) Compliance**: PII fields (such as faculty Aadhaar numbers, personal phone numbers, and bank account balances) are masked with SHA-256 salts prior to LLM/agent processing.
+- **SHA-256 Tamper-Evident Ledger**: Every state transition generates a cryptographic digest linked to the preceding record:
+  $$\text{Block Hash} = \text{SHA-256}\Big(\text{PrevHash} + \text{Timestamp} + \text{AppID} + \text{OfficerID} + \text{Action} + \text{FindingsHash}\Big)$$
+  Ensures absolute legal admissibility during statutory appeals, RTI filings, and High Court inquiries.
 
 ---
 
-## 9. Repository Directory Structure
+## 12. Observability, Telemetry & Audit Chains
 
-```text
-d:\SIH2026/
+VerifyAI provides comprehensive system telemetry and compliance tracking:
+- **Application Processing Timeline**: Real-time Gantt timeline tracking milliseconds spent in OCR, forensics, cross-checking, and authority queries.
+- **Confidence Distribution Histograms**: Real-time monitoring of OCR confidence scores across different regional languages and document layouts.
+- **Audit Event Inspector**: Searchable, role-filtered log viewer displaying who reviewed which application, what evidence was inspected, and all historical decisions.
+
+---
+
+## 13. Functional Execution Scenarios (Simulated Demos)
+
+### Scenario A: Clean Application (`Case 01 — Urban Engineering EoA`)
+- **Institution**: APEX Institute of Technology (New Delhi).
+- **Submitted Docs**: Land Deed (2.75 Acres), Fire NOC (Valid to 2026), Municipal Plan, Faculty List (SFR 1:15).
+- **VerifyAI Outcome**: 
+  - ✅ Land norm satisfied (Min required: 2.50 Acres).
+  - ✅ Fire NOC verified via Delhi Fire Service API.
+  - ✅ Faculty cadre ratio 1:2:6 perfectly compliant.
+  - **Status**: `PRE_VALIDATED_CLEAR` (Eligible for accelerated scrutiny).
+
+### Scenario B: Tampered Fire Safety NOC (`Case 02 — Forgery Flag`)
+- **Institution**: Vidya Technical College.
+- **Submitted Docs**: Fire NOC purportedly valid until November 2027.
+- **VerifyAI Outcome**:
+  - 🚨 **ELA Forensics**: High error-level compression box detected precisely around the digit `7` in `2027`.
+  - 🚨 **PDF Metadata**: Modified via `Adobe Photoshop 2022` on 14-Oct-2026.
+  - 🚨 **Issuing Authority API**: State Fire records show original certificate expired on 14-Nov-2023.
+  - **Status**: `SUSPECTED_ANOMALY` (Routed directly to Senior Committee with evidence overlay).
+
+### Scenario C: Cross-Document Acreage Inconsistency (`Case 03 — Contradiction`)
+- **Institution**: Green Valley Polytechnic.
+- **Submitted Docs**: Portal declares 4.0 Acres. Land Sale Deed Schedule 'A' text extract calculates to 2.8 Acres.
+- **VerifyAI Outcome**:
+  - ⚠️ **Cross-Document Mismatch**: Portal acreage (4.0) deviates from Deed extracted acreage (2.80) by 1.20 Acres.
+  - ⚠️ **Handbook Rule Check**: Rural polytechnic requires 3.0 Acres minimum. True acreage creates 0.20 Acre deficit.
+  - **Status**: `DEFICIENCY_FLAGGED` (Auto-drafts Deficiency Scrutiny Memo citing APH Clause 4.1.2).
+
+---
+
+## 14. Technology Stack
+
+VerifyAI is built strictly adhering to the modern, performant, and reliable technology stack specified for enterprise AICTE deployment:
+
+```
+├── 1. Frontend Web Client
+│   ├── React 18 & TypeScript (Type-safe, component-driven UI architecture)
+│   ├── Vite (Next-generation high-speed build tool and dev server)
+│   ├── Tailwind CSS (Configured with government-grade design color palettes)
+│   ├── shadcn/ui & Radix UI (Accessible, unstyled primitives for tables, modals, tabs)
+│   ├── Lucide React (Clean, modern iconography)
+│   └── React-PDF / PDF.js (High-fidelity vector canvas PDF rendering with SVG bounding overlays)
+│
+├── 2. Main Backend Gateway
+│   ├── Node.js 20 LTS & Express
+│   ├── TypeScript (Shared types across gateway and client DTOs)
+│   ├── Zod (Rigorous runtime schema validation for requests and payloads)
+│   ├── JWT & Multi-Role RBAC (Institution, Scrutiny Officer, Regional Director, Admin)
+│   ├── Multer & ClamAV (Secure multi-part upload handling with virus isolation)
+│   └── BullMQ / Redis (Asynchronous background worker orchestration)
+│
+├── 3. AI & Forensic Microservice
+│   ├── Python 3.11 & FastAPI (High-concurrency async processing endpoints)
+│   ├── PyMuPDF (fitz) (Direct vector PDF text, page geometry, font-table parser)
+│   ├── PaddleOCR (Multilingual Indian script OCR: Hindi, Regional & English)
+│   ├── OpenCV & NumPy (Error Level Analysis, clone detection, stamp edge extraction)
+│   └── Pillow (Image recompression and matrix manipulation)
+│
+├── 4. AI Workflow Orchestration
+│   ├── LangGraph (Stateful multi-actor agent decision graph and cyclic flows)
+│   ├── LLM Provider Adapter (Flexible support for local Ollama/Mistral or sovereign cloud LLMs)
+│   └── Prompt Guardrails (Strict zero-hallucination regulatory citation filters)
+│
+├── 5. Database & Storage Vault
+│   ├── PostgreSQL 16 (Relational schemas, application states & immutable audit trail)
+│   ├── SQLAlchemy 2.0 & Alembic (Python ORM & automated database migrations)
+│   └── MinIO / AWS S3 (Private, encrypted S3-compatible document storage)
+│
+└── 6. DevOps & Quality Assurance
+    ├── Docker & Docker Compose (One-command orchestration across all services)
+    ├── GitHub Actions (Continuous Integration linting, security scans, unit tests)
+    ├── Pytest (FastAPI route tests, OCR evaluation & forensic algorithm benchmarks)
+    └── Vitest & React Testing Library (Frontend UI component and store testing)
+```
+
+---
+
+## 15. Modular Project Structure
+
+```
+aicte-verifyai/
 ├── .github/
 │   └── workflows/
-│       ├── ci-backend.yml              # Node.js gateway CI & tests
-│       ├── ci-ai-engine.yml            # Python FastAPI & Pytest CI
-│       └── ci-frontend.yml             # React build & Vitest
+│       ├── ci-backend.yml              # Node.js build, lint & unit tests
+│       ├── ci-ai-service.yml           # Pytest suite & forensic benchmarks
+│       └── ci-frontend.yml             # Vite build & Vitest test suites
 ├── docker-compose.yml                  # Complete multi-service orchestration
-├── docker-compose.override.yml         # Local development volume mounts
-├── .env.example                        # Unified environment template
-├── README.md                           # Comprehensive documentation
+├── .env.example                        # Unified environment configuration
 │
-├── frontend/                           # React 18 + TypeScript + Vite
-│   ├── src/
-│   │   ├── assets/                     # Logos, icons, branding
-│   │   ├── components/                 # Reusable UI components (shadcn/ui)
-│   │   │   ├── ui/                     # Buttons, dialogs, badges, tables
-│   │   │   ├── DocumentViewer.tsx      # Split-screen PDF viewer with bounding boxes
-│   │   │   ├── ForensicHeatmap.tsx     # ELA visual overlay canvas
-│   │   │   ├── DeficiencyDrawer.tsx    # Deficiency slip generator & editor
-│   │   │   └── AuditTimeline.tsx       # Hash-chained event timeline viewer
-│   │   ├── pages/
-│   │   │   ├── InstitutionPortal.tsx   # Application filing & document upload wizard
-│   │   │   ├── OfficerDashboard.tsx    # High-level scrutiny overview & triage
-│   │   │   ├── ScrutinyCockpit.tsx     # Deep-dive application scrutiny view
-│   │   │   └── AuditLedgerPage.tsx     # System-wide tamper-evident audit log
-│   │   ├── hooks/                      # Custom hooks (useAuth, useScrutinyState)
-│   │   ├── lib/                        # API clients, axios instance, utilities
-│   │   └── types/                      # Frontend TypeScript data interfaces
-│   ├── package.json
-│   ├── tailwind.config.js
-│   └── vite.config.ts
+├── apps/
+│   ├── frontend/                       # React 18 + TypeScript + Vite Client
+│   │   ├── src/
+│   │   │   ├── assets/                 # Emblems, AICTE branding & icons
+│   │   │   ├── components/
+│   │   │   │   ├── audit/              # Cryptographic timeline & log viewer
+│   │   │   │   ├── dashboard/          # Summary metrics, status charts
+│   │   │   │   ├── inspection/         # Split-screen PDF viewer with bounding boxes
+│   │   │   │   ├── ui/                 # shadcn/ui primitives
+│   │   │   │   └── upload/             # Multi-file upload with instant pre-validation
+│   │   │   ├── hooks/                  # Custom React hooks (useApplication, useDossier)
+│   │   │   ├── layouts/                # Portal and Officer dashboard layouts
+│   │   │   ├── pages/                  # Route pages (Login, ReviewWorkspace, Analytics)
+│   │   │   └── services/               # Axios/Fetch client with interceptors
+│   │   ├── package.json
+│   │   ├── tailwind.config.js
+│   │   └── vite.config.ts
+│   │
+│   ├── backend/                        # Node.js + Express + TypeScript Gateway
+│   │   ├── src/
+│   │   │   ├── config/                 # Environment, Postgres & S3 connectors
+│   │   │   ├── controllers/            # Route controllers (auth, apps, review, audit)
+│   │   │   ├── middlewares/            # RBAC, Zod validator, audit interceptor
+│   │   │   ├── models/                 # Database interfaces and DTOs
+│   │   │   ├── routes/                 # REST endpoints (/api/v1/applications, etc.)
+│   │   │   └── utils/                  # SHA-256 cryptographic chain helpers
+│   │   ├── package.json
+│   │   └── tsconfig.json
+│   │
+│   └── ai-service/                     # Python 3.11 + FastAPI Microservice
+│       ├── app/
+│       │   ├── api/                    # FastAPI routes (/v1/scrutinize, /v1/forensics)
+│       │   ├── core/                   # App configs and security models
+│       │   ├── forensica/              # ELA, metadata, clone detection algorithms
+│       │   ├── ocr/                    # PyMuPDF parser & PaddleOCR pipelines
+│       │   ├── rules/                  # Configurable APH 2024-27 rule matrices
+│       │   ├── workflows/              # LangGraph multi-agent decision state graph
+│       │   └── main.py                 # FastAPI application root
+│       ├── tests/                      # Pytest suite with sample synthetic documents
+│       ├── requirements.txt
+│       └── Dockerfile
 │
-├── backend-gateway/                    # Node.js + Express + TypeScript Gateway
-│   ├── src/
-│   │   ├── config/                     # Environment, S3/MinIO & DB connections
-│   │   ├── controllers/                # App, Document, Review, Audit controllers
-│   │   ├── middlewares/                # Auth, RBAC, Rate-limiting, Zod validation
-│   │   ├── routes/                     # REST API route definitions
-│   │   ├── services/                   # Business logic, S3 stream, Redis queue
-│   │   ├── types/                      # TypeScript schemas & Zod validators
-│   │   └── index.ts                    # Gateway entrypoint & WebSocket server
-│   ├── package.json
-│   └── tsconfig.json
+├── data/
+│   ├── rules/
+│   │   └── aicte_aph_2024_27.json      # Machine-readable AICTE handbook thresholds
+│   └── sample_datasets/                # Curated evaluation dossiers
+│       ├── 01_valid_engineering_eoa/
+│       ├── 02_forged_fire_noc/
+│       └── 03_mismatched_land_deed/
 │
-├── ai-engine/                          # Python 3.11 + FastAPI Scrutiny Microservice
-│   ├── app/
-│   │   ├── api/                        # FastAPI route controllers
-│   │   ├── core/                       # App settings, logging, S3 client
-│   │   ├── workflow/                   # LangGraph orchestration state machine
-│   │   │   ├── state.py                # TypedDict state definitions
-│   │   │   ├── graph.py                # StateGraph workflow assembly
-│   │   │   └── nodes/                  # Individual scrutiny nodes
-│   │   │       ├── ingest_node.py
-│   │   │       ├── ocr_node.py
-│   │   │       ├── forensics_node.py
-│   │   │       ├── authority_node.py
-│   │   │       ├── compliance_node.py
-│   │   │       ├── cv_infra_node.py
-│   │   │       └── synthesis_node.py
-│   │   ├── engines/                    # Core technical processing engines
-│   │   │   ├── ocr_parser.py           # PaddleOCR & PyMuPDF extractor
-│   │   │   ├── ela_forensics.py        # OpenCV Error Level Analysis & Hash check
-│   │   │   ├── qr_signature.py         # QR code reader & X.509 PKI validator
-│   │   │   ├── aph_rules.py            # Deterministic Python APH compliance rules
-│   │   │   └── cv_infra.py             # EXIF geotag & blueprint dimension checker
-│   │   ├── external_mock/              # Sandbox mocks for DigiLocker & Land APIs
-│   │   └── main.py                     # FastAPI application factory
-│   ├── tests/                          # Pytest suite for OCR, forensics & rules
-│   ├── requirements.txt                # Pinned Python dependencies
-│   └── Dockerfile
-│
-└── database/                           # PostgreSQL Migrations & Seeds
-    ├── migrations/                     # Alembic / Prisma migration files
-    └── seeds/                          # Synthetic test institutions & APH rules
+└── docs/
+    ├── ARCHITECTURE.md                 # System specifications & sequence traces
+    ├── COMPLIANCE_MATRIX.md            # Mapping to AICTE Approval Process Handbook
+    └── API_REFERENCE.md                # OpenAPI / Swagger specification
 ```
 
 ---
 
-## 10. API Specification & Integration Contracts
+## 16. Local Setup and Execution Guide
 
-The platform operates via RESTful APIs between the Frontend, Gateway, and AI Engine, backed by WebSocket streams for real-time telemetry.
-
-### Core Endpoints
-
-#### 1. Ingest Application Package
-- **Endpoint:** `POST /api/v1/applications/submit`
-- **Producer:** Institution Portal | **Consumer:** Node.js Gateway
-- **Payload:** `multipart/form-data` containing application metadata JSON and PDF binary streams.
-- **Response:** `202 Accepted` with `application_id` and initial tracking token.
-
-#### 2. Dispatch Scrutiny Execution
-- **Endpoint:** `POST /internal/ai/v1/scrutiny/process`
-- **Producer:** Gateway Worker | **Consumer:** FastAPI AI Microservice
-```json
-{
-  "application_id": "8f3b2e1a-4c5d-4a9b-8e2f-1a3b5c7d9e0f",
-  "category": "Extension_of_Approval",
-  "academic_year": "2026-2027",
-  "documents": [
-    {
-      "document_id": "d1a2b3c4-e5f6-7a8b-9c0d-1e2f3a4b5c6d",
-      "document_type": "LAND_DEED",
-      "s3_key": "raw/8f3b2e1a/land_deed.pdf"
-    },
-    {
-      "document_id": "f2b3c4d5-e6f7-8a9b-0c1d-2e3f4a5b6c7d",
-      "document_type": "FIRE_SAFETY_NOC",
-      "s3_key": "raw/8f3b2e1a/fire_noc.pdf"
-    }
-  ]
-}
-```
-
-#### 3. AI Scrutiny Results Contract
-- **Endpoint:** `GET /api/v1/applications/:id/scrutiny-dossier`
-- **Producer:** AI Engine / Gateway | **Consumer:** Scrutiny Officer Cockpit
-```json
-{
-  "application_id": "8f3b2e1a-4c5d-4a9b-8e2f-1a3b5c7d9e0f",
-  "overall_risk_score": 0.35,
-  "summary": {
-    "total_documents": 8,
-    "verified_count": 6,
-    "anomalies_flagged": 1,
-    "deficiencies_count": 1
-  },
-  "forensic_findings": [
-    {
-      "document_id": "f2b3c4d5-e6f7-8a9b-0c1d-2e3f4a5b6c7d",
-      "document_type": "FIRE_SAFETY_NOC",
-      "status": "FLAGGED",
-      "anomaly_type": "DATE_TAMPERING_SUSPECTED",
-      "ela_score": 0.88,
-      "details": "High pixel compression variance detected around expiration date box (Line 4). Probable digital manipulation.",
-      "evidence_image_url": "/storage/evidence/f2b3_ela_crop.png"
-    }
-  ],
-  "authority_verifications": [
-    {
-      "document_type": "AFFILIATION_LETTER",
-      "source": "State Technical University Portal",
-      "status": "VERIFIED",
-      "reference_number": "STU/AFFIL/2025/942",
-      "timestamp": "2026-10-26T18:30:00Z"
-    }
-  ],
-  "regulatory_compliance": [
-    {
-      "rule_code": "APH-2026-FSR-01",
-      "clause": "Clause 7.1 - Faculty-Student Ratio",
-      "prescribed": "1:20 (Total Faculty Required: 45)",
-      "observed": "1:24 (Valid Faculty Identified: 37)",
-      "status": "DEFICIENT",
-      "severity": "HIGH",
-      "notes": "Shortfall of 8 eligible faculty members in Computer Science & Engineering."
-    }
-  ]
-}
-```
-
-#### 4. Officer Review & Disposition
-- **Endpoint:** `POST /api/v1/applications/:id/officer-decision`
-- **Producer:** Scrutiny Officer Cockpit | **Consumer:** Gateway Backend
-- **Payload:**
-```json
-{
-  "action": "DEFICIENCY_NOTICE_ISSUED",
-  "remarks": "Institution must rectify Faculty Shortfall and submit original Fire Safety NOC with verification receipt from Municipal Fire Office.",
-  "cure_period_days": 15,
-  "deficiency_items": ["APH-2026-FSR-01", "FIRE-NOC-VALIDATION"]
-}
-```
+### Prerequisites
+- **Docker & Docker Compose** (v24+ recommended)
+- Or for bare-metal setup: **Node.js 20 LTS**, **Python 3.11**, **PostgreSQL 16**, and **MinIO / Redis**
 
 ---
 
-## 11. Installation & Local Development Setup
+### Method A: One-Command Docker Compose (Fastest & Recommended)
 
-### 11.1 Prerequisites
-- **Docker Engine** (v24.0+) and **Docker Compose** (v2.20+)
-- **Node.js** (v20.x LTS) & `npm` / `pnpm`
-- **Python** (v3.11.x) & `pip`
-- **Git**
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/your-org/aicte-verifyai.git
+   cd aicte-verifyai
+   ```
 
-### 11.2 Quickstart with Docker Compose
+2. **Initialize Environment Variables**:
+   ```bash
+   cp .env.example .env
+   ```
 
-The fastest way to spin up the entire multi-service stack (Frontend, Gateway, AI Engine, PostgreSQL, MinIO, Redis):
+3. **Build and launch the complete multi-service stack**:
+   ```bash
+   docker compose up --build -d
+   ```
 
-```bash
-# 1. Clone the repository
-git clone https://github.com/your-org/aicte-pragyan-drishti.git
-cd aicte-pragyan-drishti
+4. **Verify Running Services**:
+   ```bash
+   docker compose ps
+   ```
 
-# 2. Copy and configure environment variables
-cp .env.example .env
-
-# 3. Build and launch all containers
-docker compose up --build -d
-
-# 4. Verify running containers
-docker compose ps
-```
-
-Once running, access the local environments:
-- **Scrutiny Officer Cockpit & UI:** `http://localhost:5173`
-- **Node.js API Gateway:** `http://localhost:4000/api/v1/health`
-- **FastAPI AI Microservice Docs:** `http://localhost:8000/docs`
-- **MinIO Object Console:** `http://localhost:9001` (User: `minioadmin` / Pass: `minioadmin`)
-- **PostgreSQL Database:** `localhost:5432` (`aicte_db`)
+5. **Access Application Interfaces**:
+   - 🖥️ **VerifyAI Web Portal**: [http://localhost:5173](http://localhost:5173)
+   - 🌐 **Node.js Gateway Health**: [http://localhost:5000/api/health](http://localhost:5000/api/health)
+   - 🧠 **FastAPI AI Docs & Swagger**: [http://localhost:8000/docs](http://localhost:8000/docs)
+   - 🗄️ **MinIO Object Console**: [http://localhost:9001](http://localhost:9001) *(User: `minioadmin` / Pass: `minioadmin`)*
 
 ---
 
-### 11.3 Manual Local Setup (Frontend, Backend, AI Engine)
+### Method B: Manual Bare-Metal Developer Setup
 
-If developing individual services locally without containerizing:
+#### Step 1: Start PostgreSQL and Redis
+Ensure PostgreSQL is running locally on port `5432` with a database named `verifyai`, and Redis on port `6379`.
 
-#### 1. Setup Storage & Database (Docker Helper)
+#### Step 2: Launch the AI & Document Processing Microservice (Python)
 ```bash
-docker compose up postgres minio redis -d
-```
+cd apps/ai-service
 
-#### 2. Setup AI Microservice (FastAPI + LangGraph)
-```bash
-cd ai-engine
+# Create and activate virtual environment
 python -m venv venv
 # On Windows:
 .\venv\Scripts\activate
-# On Linux/macOS:
-# source venv/bin/activate
+# On Linux / macOS:
+source venv/bin/activate
 
+# Install dependencies
+pip install --upgrade pip
 pip install -r requirements.txt
+
+# Start FastAPI development server
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-#### 3. Setup API Gateway (Node.js + Express)
+#### Step 3: Launch the Main Backend Gateway (Node.js)
 ```bash
-cd ../backend-gateway
+cd apps/backend
+
+# Install dependencies
 npm install
+
+# Run database migrations
+npm run db:migrate
+
+# Start Node.js API development server
 npm run dev
 ```
 
-#### 4. Setup Frontend (React + Vite + shadcn/ui)
+#### Step 4: Launch the Frontend Web Application (React + Vite)
 ```bash
-cd ../frontend
+cd apps/frontend
+
+# Install dependencies
 npm install
+
+# Start Vite hot-reloading development server
 npm run dev
 ```
 
 ---
 
-## 12. Evaluation Metrics & Benchmark Dataset
+### Running Automated Test Suites
 
-The system is evaluated against a curated benchmark dataset of **synthetic and anonymized technical institution applications** mimicking real-world AICTE edge cases:
+```bash
+# 1. Run Python AI, OCR & Forensic tests:
+cd apps/ai-service
+pytest tests/ -v
 
-| Metric Category | Target Benchmark | Evaluation Methodology |
-| :--- | :--- | :--- |
-| **OCR Field Extraction Accuracy** | $\ge 96.5\%$ | Character Error Rate (CER) & Word Error Rate (WER) across noisy scanned affidavits & deeds. |
-| **Tamper & Forgery Precision** | $\ge 92.0\%$ | Evaluated against digitally manipulated test sets (modified expiration dates, cloned signatures). |
-| **False Positive Rate (Forensics)** | $\le 4.5\%$ | Minimizing wrongful flags on benign scan artifacts and low-resolution government stamps. |
-| **External Source Verification Rate** | $\ge 98.0\%$ | Successful parsing of standardized QR codes and X.509 digital signatures. |
-| **Rule Engine Determinism** | $100.0\%$ | Pure functional assertions; 0% divergence between automated calculation and manual APH audit. |
-| **End-to-End Processing Latency** | $< 45\text{ seconds}$ | Complete scrutiny pipeline for a standard 40-document application package. |
-| **Reduction in Manual Scrutiny Effort** | $\sim 70-80\%$ | Measured by reduction in time taken per application during simulated scrutiny committee trials. |
+# 2. Run Backend Gateway unit and integration tests:
+cd apps/backend
+npm test
 
----
-
-## 13. Security, Privacy & Legal Safeguards
-
-1. **Digital Personal Data Protection Act (DPDP 2023) Compliance:**
-   - Personally Identifiable Information (PII) such as Faculty Aadhaar numbers, personal phone numbers, and bank account numbers are redacted in preview screens and stored as salted SHA-256 hashes.
-2. **Confidentiality & S3 Server-Side Encryption:**
-   - All uploaded documents are stored in private S3/MinIO buckets with **AES-256 server-side encryption**. Files are accessed strictly via short-lived, pre-signed URLs (valid for 15 minutes).
-3. **Role-Based Access Control (RBAC):**
-   - Granular separation of duties:
-     - `INSTITUTION_USER`: Uploads documents, views own deficiency slips, submits rectifications.
-     - `SCRUTINY_OFFICER`: Performs preliminary review, views evidence crops, concurs with/overrides AI flags.
-     - `REGIONAL_OFFICER`: Authorizes recommendations and approves physical inspection visits.
-     - `SYSTEM_AUDITOR`: Read-only access to the immutable audit trail.
-4. **Advisory Decision Support Mandate:**
-   - **AI-generated findings are strictly decision-support outputs.** No application can be rejected, delayed, or sanctioned solely by automated AI triggers. Statutory scrutiny, physical inspections, and final regulatory actions remain strictly vested in competent AICTE officers.
+# 3. Run Frontend unit and component tests:
+cd apps/frontend
+npm run test
+```
 
 ---
 
-## 14. Placement & Software Engineering Highlights
+## 👥 The Team & Hackathon Contribution
 
-This project is architected to showcase production-grade software engineering and full-stack AI system design:
+Developed with ❤️ for the **Smart India Hackathon (SIH)** under the auspices of the **AICTE Innovation Cell**, Ministry of Education, Government of India.
 
-- **Distributed Systems Design:** Clean microservice boundaries between an async Node.js API Gateway, a Python AI engine, and private S3-compatible storage.
-- **Controlled AI Workflows:** Utilizing **LangGraph** to model stateful, deterministic graph workflows with conditional edges, error retries, and checkpointing rather than relying on brittle, uncontrolled agent loops.
-- **Defensive Engineering & Resilience:** Explicit fallbacks (`SOURCE_UNAVAILABLE`, `MANUAL_REVIEW_REQUIRED`) ensure the system never crashes when third-party government APIs experience downtime.
-- **Full Type Safety:** End-to-end type safety from database schemas and Zod gateway contracts to typed Python LangGraph states and TypeScript React hooks.
-- **Enterprise UI/UX:** Clean, accessible, production-ready interface built with Tailwind CSS and shadcn/ui, avoiding generic templates.
+*Engineered to uphold the sanctity of technical education in India through trustworthy, explainable, and responsible artificial intelligence.*
 
 ---
 
-## 15. License & Team Acknowledgments
+## 📄 License & Attribution
 
-Developed with dedication for the **Smart India Hackathon (SIH 2026)** under the auspices of the **All India Council for Technical Education (AICTE), Ministry of Education, Government of India**.
-
-- **Organization:** AICTE (All India Council for Technical Education)
-- **Problem Statement:** AI-Powered Application Validation, Document Authentication and Regulatory Compliance Verification
-- **License:** MIT Open Source License (Restricted for Educational & Governmental Evaluation)
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.  
+All regulatory checklists and Approval Process Handbook (APH) citations are intellectual property of the **All India Council for Technical Education (AICTE)**.
