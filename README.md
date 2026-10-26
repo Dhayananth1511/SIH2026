@@ -1,8 +1,6 @@
 # VerifyAI — AI-Powered Application Validation, Document Authentication & Regulatory Compliance Platform
 
-LIVE Demo: [https://verifyai-aicte.gov.in](https://verifyai-aicte.gov.in)  
-Demo Video: [https://youtu.be/verifyai-aicte-demo](https://youtu.be/verifyai-aicte-demo)  
-Documentation: [https://docs.verifyai.internal](https://docs.verifyai.internal)
+
 
 [![AICTE / MoE](https://img.shields.io/badge/Initiative-AICTE%20%7C%20Ministry%20of%20Education-1A365D?style=for-the-badge&logo=india)](https://www.aicte-india.org/)
 [![SIH Hackathon](https://img.shields.io/badge/Smart%20India%20Hackathon-Problem%20Statement%20Solution-FF9933?style=for-the-badge)](https://sih.gov.in/)
