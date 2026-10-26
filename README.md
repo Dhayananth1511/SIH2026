@@ -1,9 +1,12 @@
 # VerifyAI — AI-Powered Application Validation, Document Authentication & Regulatory Compliance Platform
 
+LIVE Demo: [https://verifyai-aicte.gov.in](https://verifyai-aicte.gov.in)  
+Demo Video: [https://youtu.be/verifyai-aicte-demo](https://youtu.be/verifyai-aicte-demo)  
+Documentation: [https://docs.verifyai.internal](https://docs.verifyai.internal)
 
 [![AICTE / MoE](https://img.shields.io/badge/Initiative-AICTE%20%7C%20Ministry%20of%20Education-1A365D?style=for-the-badge&logo=india)](https://www.aicte-india.org/)
 [![SIH Hackathon](https://img.shields.io/badge/Smart%20India%20Hackathon-Problem%20Statement%20Solution-FF9933?style=for-the-badge)](https://sih.gov.in/)
-[![Stack](https://img.shields.io/badge/Architecture-React%20%7C%20Node%20%7C%20FastAPI%20%7C%20LangGraph-138808?style=for-the-badge)](https://github.com/)
+[![Stack](https://img.shields.io/badge/Architecture-React%20%7C%20Node%20%7C%20FastAPI%20%7C%20LangGraph-138808?style=for-the-badge)](https://github.com/Dhayananth1511/SIH2026)
 [![Docker Ready](https://img.shields.io/badge/Deployment-Docker%20Compose-2496ED?style=for-the-badge&logo=docker)](https://docker.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-gray?style=for-the-badge)](LICENSE)
 
@@ -23,7 +26,35 @@ Scrutinizing millions of physical and scanned pages—land ownership deeds, muni
 
 ---
 
-## Table of Contents
+## 📌 Problem vs. VerifyAI Solution Matrix
+
+| AICTE Scrutiny Requirement | Conventional Manual Process | VerifyAI Automated Solution |
+| :--- | :--- | :--- |
+| **1. Application Ingestion** | Manual upload of dozens of unverified PDFs with missing or expired pages. | Category-aware smart upload with real-time pre-submission completeness and expiry filters. |
+| **2. Data Extraction** | Manual data entry and visual inspection of dense, scanned tables. | Native vector extraction (`PyMuPDF`) + Multilingual OCR (`PaddleOCR`) with bounding-box coordinates. |
+| **3. Cross-Doc Consistency** | Inconsistencies between affidavits, deeds, and portal declarations slip through. | Triangulates figures across 5+ documents (e.g., Land Deed $\leftrightarrow$ NOC $\leftrightarrow$ Architect Cert $\leftrightarrow$ Portal). |
+| **4. Manipulation Detection** | Photoshop edits and forged rubber stamps are difficult to identify visually. | Computer vision forensics: **Error Level Analysis (ELA)**, font baseline checks, and duplicate photo pHash. |
+| **5. Source Authentication** | Slow email/phone inquiries to external issuing authorities. | Automated verification gateway for **DigiLocker**, **State Land Portals (Bhulekh)**, **e-Sign**, and **2D Secure QR**. |
+| **6. Regulatory Compliance** | Subjective, manual checking against the 200+ page AICTE Handbook. | Automated rule engine enforcing AICTE Approval Process Handbook (APH 2024–27) norms (SFR, Cadre, Land). |
+| **7. Evidence Dashboard** | Disconnected reports without direct, visual proof links. | Interactive split-screen UI displaying original PDF pages with highlighted bounding boxes and handbook clause citations. |
+| **8. Audit Trail & Human Control**| Vulnerable to disputes; risk of arbitrary decisions. | Strictly advisory AI; immutable SHA-256 audit ledger; **all adverse regulatory actions require officer sign-off**. |
+
+---
+
+## 🛠️ Technology Stack Architecture
+
+| Tier / Layer | Recommended Technology Stack | Architecture Role & Key Capabilities | Core Modules & Libraries |
+| :--- | :--- | :--- | :--- |
+| **1. Frontend Web Client** | **React 18 · TypeScript · Vite · Tailwind CSS · shadcn/ui** | Officer scrutiny split-screen workbench, institutional upload center, interactive SVG bounding-box overlays over PDFs. | `react-pdf`, `@radix-ui`, `lucide-react`, `tanstack-query`, `zod` |
+| **2. Main Backend Gateway** | **Node.js 20 LTS · Express · TypeScript · REST API · Zod** | Authentication, role-based access control (RBAC), application lifecycle management, document ingest pipeline, and cryptographically chained audit logging. | `express`, `zod`, `jsonwebtoken`, `bullmq`, `multer`, `clamav.js` |
+| **3. AI & Document Processing** | **Python 3.11 · FastAPI · PyMuPDF · PaddleOCR · OpenCV** | High-throughput asynchronous vector PDF parsing, multilingual text extraction (Hindi/English/Regional), Error Level Analysis (ELA), and pixel-level tampering detection. | `fastapi`, `pymupdf (fitz)`, `paddleocr`, `opencv-python`, `numpy`, `pillow` |
+| **4. AI Workflow Orchestration** | **LangGraph · LLM Provider Adapter** | Stateful multi-agent graph directing classification, cross-document correlation, APH compliance checks, and explainable Deficiency Scrutiny Sheet (DSS) synthesis. | `langgraph`, `langchain-core`, `pydantic-v2`, `httpx` |
+| **5. Database & Storage Vault** | **PostgreSQL 16 · SQLAlchemy 2.0 · Alembic · MinIO / S3** | Relational schemas for institutional records, anomaly findings, SHA-256 audit ledger, and encrypted private object storage for dossiers. | `psycopg2-binary`, `sqlalchemy`, `alembic`, `boto3`, `redis` |
+| **6. DevOps & Quality Assurance** | **Docker · Docker Compose · GitHub Actions · Pytest · Vitest** | Multi-container orchestration, automated CI/CD linting, backend/frontend unit tests, and forensic algorithm benchmarks. | `docker-compose`, `github-actions`, `pytest`, `vitest`, `supertest` |
+
+---
+
+## 📑 Table of Contents
 
 1. [Institutional Applicant Workflow](#1-institutional-applicant-workflow)
 2. [AICTE Scrutiny Officer & Admin Workflow](#2-aicte-scrutiny-officer--admin-workflow)
@@ -39,9 +70,8 @@ Scrutinizing millions of physical and scanned pages—land ownership deeds, muni
 11. [Security, DPDP Compliance & Statutory Safeguards](#11-security-dpdp-compliance--statutory-safeguards)
 12. [Observability, Telemetry & Audit Chains](#12-observability-telemetry--audit-chains)
 13. [Functional Execution Scenarios (Simulated Demos)](#13-functional-execution-scenarios-simulated-demos)
-14. [Technology Stack](#14-technology-stack)
-15. [Modular Project Structure](#15-modular-project-structure)
-16. [Local Setup and Execution Guide](#16-local-setup-and-execution-guide)
+14. [Modular Project Structure](#14-modular-project-structure)
+15. [Local Setup and Execution Guide](#15-local-setup-and-execution-guide)
 
 ---
 
@@ -659,54 +689,7 @@ VerifyAI provides comprehensive system telemetry and compliance tracking:
 
 ---
 
-## 14. Technology Stack
-
-VerifyAI is built strictly adhering to the modern, performant, and reliable technology stack specified for enterprise AICTE deployment:
-
-```
-├── 1. Frontend Web Client
-│   ├── React 18 & TypeScript (Type-safe, component-driven UI architecture)
-│   ├── Vite (Next-generation high-speed build tool and dev server)
-│   ├── Tailwind CSS (Configured with government-grade design color palettes)
-│   ├── shadcn/ui & Radix UI (Accessible, unstyled primitives for tables, modals, tabs)
-│   ├── Lucide React (Clean, modern iconography)
-│   └── React-PDF / PDF.js (High-fidelity vector canvas PDF rendering with SVG bounding overlays)
-│
-├── 2. Main Backend Gateway
-│   ├── Node.js 20 LTS & Express
-│   ├── TypeScript (Shared types across gateway and client DTOs)
-│   ├── Zod (Rigorous runtime schema validation for requests and payloads)
-│   ├── JWT & Multi-Role RBAC (Institution, Scrutiny Officer, Regional Director, Admin)
-│   ├── Multer & ClamAV (Secure multi-part upload handling with virus isolation)
-│   └── BullMQ / Redis (Asynchronous background worker orchestration)
-│
-├── 3. AI & Forensic Microservice
-│   ├── Python 3.11 & FastAPI (High-concurrency async processing endpoints)
-│   ├── PyMuPDF (fitz) (Direct vector PDF text, page geometry, font-table parser)
-│   ├── PaddleOCR (Multilingual Indian script OCR: Hindi, Regional & English)
-│   ├── OpenCV & NumPy (Error Level Analysis, clone detection, stamp edge extraction)
-│   └── Pillow (Image recompression and matrix manipulation)
-│
-├── 4. AI Workflow Orchestration
-│   ├── LangGraph (Stateful multi-actor agent decision graph and cyclic flows)
-│   ├── LLM Provider Adapter (Flexible support for local Ollama/Mistral or sovereign cloud LLMs)
-│   └── Prompt Guardrails (Strict zero-hallucination regulatory citation filters)
-│
-├── 5. Database & Storage Vault
-│   ├── PostgreSQL 16 (Relational schemas, application states & immutable audit trail)
-│   ├── SQLAlchemy 2.0 & Alembic (Python ORM & automated database migrations)
-│   └── MinIO / AWS S3 (Private, encrypted S3-compatible document storage)
-│
-└── 6. DevOps & Quality Assurance
-    ├── Docker & Docker Compose (One-command orchestration across all services)
-    ├── GitHub Actions (Continuous Integration linting, security scans, unit tests)
-    ├── Pytest (FastAPI route tests, OCR evaluation & forensic algorithm benchmarks)
-    └── Vitest & React Testing Library (Frontend UI component and store testing)
-```
-
----
-
-## 15. Modular Project Structure
+## 14. Modular Project Structure
 
 ```
 aicte-verifyai/
@@ -776,7 +759,7 @@ aicte-verifyai/
 
 ---
 
-## 16. Local Setup and Execution Guide
+## 15. Local Setup and Execution Guide
 
 ### Prerequisites
 - **Docker & Docker Compose** (v24+ recommended)
@@ -788,8 +771,8 @@ aicte-verifyai/
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/your-org/aicte-verifyai.git
-   cd aicte-verifyai
+   git clone https://github.com/Dhayananth1511/SIH2026.git
+   cd SIH2026
    ```
 
 2. **Initialize Environment Variables**:
