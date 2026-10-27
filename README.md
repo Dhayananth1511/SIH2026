@@ -27,7 +27,7 @@
 10. [Validation Workflow](#10-validation-workflow)
 11. [Compliance Rules Engine](#11-compliance-rules-engine)
 12. [Issuer Verification](#12-issuer-verification)
-13. [Multi-Agent Layer (LangGraph)](#13-multi-agent-layer-langgraph)
+13. [Multi-Agent Layer (LangGraph) & Human-in-the-Loop (HITL) Governance](#13-multi-agent-layer-langgraph--human-in-the-loop-hitl-governance)
 14. [Demo Dataset and Test Scenarios](#14-demo-dataset-and-test-scenarios)
 15. [API Documentation](#15-api-documentation)
 16. [Testing and Evaluation](#16-testing-and-evaluation)
@@ -399,9 +399,11 @@ Each attempt records the source, timestamp, response reference and result. An un
 
 ---
 
-## 13. Multi-Agent Layer (LangGraph)
+## 13. Multi-Agent Layer (LangGraph) & Human-in-the-Loop (HITL) Governance
 
-The platform integrates a controlled LangGraph multi-agent orchestration layer coordinating specialized verification stages on top of the deterministic core:
+> **Full Specification:** See dedicated [AGENT_WORKFLOW.md](file:///d:/BIT/Dhaya/Sih/AGENT_WORKFLOW.md) and [plan.md](file:///d:/BIT/Dhaya/Sih/plan.md) for complete mathematical schemas, state types, and regulatory decision matrices.
+
+The platform integrates a controlled LangGraph multi-agent orchestration layer coordinating specialized verification stages on top of the deterministic core. Crucially, **AI agents operate strictly in an advisory capacity**; all statutory actions require mandatory, authenticated Human-in-the-Loop approval.
 
 ```mermaid
 flowchart LR
@@ -421,21 +423,35 @@ flowchart LR
     HumanGate -.-> Audit
 ```
 
-| Node | Responsibility |
-|------|----------------|
-| Document Intelligence | Classification, OCR, field extraction with page-level evidence |
-| Anomaly Analysis | Duplicates, metadata, image and cross-document checks |
-| Issuer Verification | Invokes registered adapters only |
-| Compliance Analysis | Evaluates versioned rules, explains results and evidence gaps |
-| Result Aggregator | Merges results, removes duplicate findings, separates confirmed rule failures from uncertain AI observations |
+### Specialized Verification Agents
 
-**Guardrails**
+| Node | Responsibility | Output Type |
+|------|----------------|-------------|
+| **Document Intelligence Agent** | PDF parsing, multi-lingual OCR, table extraction, bounding-box coordinate mapping | Structured Canonical JSON with Page/Box Refs |
+| **Forensic Anomaly Agent** | Cryptographic SHA-256 hash duplication, internal metadata vs issued date mismatch, compression artifacts | Anomaly Indicators (`ANOMALY_INDICATOR_UNCONFIRMED`) |
+| **Issuer Verification Agent** | Queries state land records, fire safety directorates, university affiliation APIs | Verification Status (`verified`, `mismatch`, `pending`) |
+| **Compliance Analysis Agent** | Deterministic evaluation of Approval Process Handbook (APH 2026-27) clauses | Rule Evaluation (`pass`, `deficiency`, `warning`) |
+| **Result Aggregator Agent** | Merges agent findings, deduplicates flags, computes Scrutiny Readiness Index | Consolidated Evidence-Linked Scrutiny Dossier |
 
-- Agents never approve or reject applications, modify rules, grant permissions or bypass access controls.
-- Uploaded document content is treated as data, never as trusted instructions.
-- Typed state, timeouts, bounded retries and graceful error handling.
-- Every agent action is recorded in the audit log (agent name, workflow run ID, timestamps, rule version, evidence, errors).
-- Adverse regulatory action always requires authorized human review.
+### Statutory Human-in-the-Loop (HITL) Approval Process
+
+Under administrative law principles (Principles of Natural Justice), an automated algorithm cannot withhold Extension of Approval (EoA) or penalize an applicant institution. The platform implements a **Strict Human-in-the-Loop Gate**:
+
+1. **Evidence-Linked Dossier Review**: The Scrutiny Officer inspects extracted metrics side-by-side with original document scans and highlighted OCR bounding boxes.
+2. **Four-Way Decision Authority**:
+   - **Confirm Deficiency**: Officer validates the AI finding and generates a formal **Deficiency Memo (Form AICTE-DEF-2026)** with a statutory 7-day cure window.
+   - **Officer Override with Justification**: Officer dismisses an AI flag (e.g., recognizing a valid state government exemption). The officer **must provide a mandatory written statutory justification**, permanently sealed in the audit log.
+   - **Escalate to Standing Scrutiny Committee (SSC)**: For potential forensic tampering or fraudulent certificates requiring an institutional hearing.
+   - **Provisional Scrutiny Clearance**: When all mandatory APH norms are verified, granting progression to statutory approval.
+3. **Dual-Custody Governance**: High-impact adverse actions require two-officer digital sign-off (Scrutiny Officer + Regional Officer).
+4. **Immutable Append-Only Audit Trail**: Every agent tool execution, confidence score, officer review action, override note, and digital signature is cryptographically chained and timestamped.
+
+### Agent Guardrails & Safety Constraints
+
+- **Advisory Only**: Agents cannot approve or reject applications, alter rules, or grant permissions.
+- **Zero Instruction Injection**: Uploaded PDFs and images are treated strictly as untrusted binary data; document contents cannot manipulate prompt contexts.
+- **Deterministic Precedence**: Hardcoded statutory arithmetic (e.g., built-up area thresholds) takes absolute precedence over probabilistic LLM outputs.
+- **Auditability**: Every agent execution is stamped with run ID, node version, execution latency, and input/output hash proofs.
 
 ---
 
