@@ -124,7 +124,9 @@ graph TB
     subgraph BackendGateway["API Gateway & Orchestration (FastAPI)"]
         API["FastAPI REST Backend<br/>(JWT Auth · RBAC · Pydantic Validation)"]
         Orchestrator["Validation Orchestrator"]
+        LangGraph["LangGraph Multi-Agent Orchestrator<br/>(StateGraph Workflow & Supervised Triage)"]
         API --> Orchestrator
+        Orchestrator --> LangGraph
 
         subgraph CoreEngines["Core Processing & Compliance Engines"]
             DocEngine["Document Engine<br/>• OCR (PaddleOCR / Tesseract)<br/>• PyMuPDF Text Extraction<br/>• SHA-256 Deduplication"]
@@ -133,10 +135,10 @@ graph TB
             AuditService["Audit Service<br/>• Append-Only Event Log<br/>• Cryptographic Hash Chaining"]
         end
 
-        Orchestrator --> DocEngine
-        Orchestrator --> RulesEngine
-        Orchestrator --> IssuerAdapters
-        Orchestrator --> AuditService
+        LangGraph --> DocEngine
+        LangGraph --> RulesEngine
+        LangGraph --> IssuerAdapters
+        LangGraph --> AuditService
     end
 
     subgraph StorageLayer["Data & Persistence Layer"]
@@ -180,13 +182,13 @@ graph TB
 | Image analysis | OpenCV, Pillow | Suspicious-region indicators |
 | AI extraction (optional) | Structured-output LLM API with rule-based fallback | Fields into validated JSON |
 | Semantic retrieval (optional) | Sentence Transformers, FAISS | Search approved regulatory documents |
-| Agent orchestration (optional) | LangGraph | Controlled multi-agent workflow |
+| Agent orchestration | LangGraph | Multi-agent decision-support and validation workflow |
 | Background jobs (optional) | Celery, Redis | Asynchronous processing |
 | Testing | Pytest, HTTPX, Vitest | Backend and frontend tests |
 | Deployment | Docker, Docker Compose | Reproducible environment |
 | CI/CD | GitHub Actions | Automated tests and builds |
 
-**MVP core:** React, TypeScript, Tailwind, FastAPI, PostgreSQL, SQLAlchemy, PyMuPDF, PaddleOCR, OpenCV, RBAC and audit logs. The MVP runs without paid AI APIs.
+**Core stack:** React, TypeScript, Tailwind, FastAPI, LangGraph (Multi-Agent Workflow), PostgreSQL, SQLAlchemy, PyMuPDF, PaddleOCR, OpenCV, RBAC and audit logs. Runs locally without paid AI APIs.
 
 ---
 
@@ -211,6 +213,7 @@ AICTE-Validation-Platform/
 │   │   ├── services/       # business logic, OCR, extraction
 │   │   ├── validators/     # completeness, expiry, consistency
 │   │   ├── verifiers/      # issuer verification adapters
+│   │   ├── workflows/      # LangGraph multi-agent decision workflows
 │   │   └── audit/          # audit event service
 │   ├── tests/
 │   └── requirements.txt
@@ -398,7 +401,7 @@ Each attempt records the source, timestamp, response reference and result. An un
 
 ## 13. Multi-Agent Layer (LangGraph)
 
-An optional controlled workflow adds specialized stages on top of the deterministic core:
+The platform integrates a controlled LangGraph multi-agent orchestration layer coordinating specialized verification stages on top of the deterministic core:
 
 ```mermaid
 flowchart LR
@@ -473,7 +476,7 @@ Illustrative endpoint groups (final routes may differ):
 | Reviews | `POST /findings/{id}/review` |
 | Rules | `GET/POST /rules` (admin only) |
 | Audit | `GET /audit-events` |
-| Workflow (optional) | `POST /workflows/start`, `GET /workflows/{run_id}` |
+| Agent Workflows | `POST /workflows/start`, `GET /workflows/{run_id}` |
 
 ---
 
@@ -547,7 +550,7 @@ Complete application, missing document, expired certificate, identifier mismatch
 - [ ] React dashboard, application detail and review workspace
 - [ ] Security and audit pass
 - [ ] End-to-end tests and evaluation script
-- [ ] LangGraph multi-agent layer
+- [x] LangGraph multi-agent orchestration layer
 - [ ] RAG over approved regulatory documents
 - [ ] QR and digital-signature verification adapters
 - [ ] Background processing with Celery and Redis
