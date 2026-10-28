@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, F
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import FileResponse, Response
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload, joinedload
 from sqlalchemy import func, or_
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
@@ -10,6 +10,7 @@ import os, hashlib, shutil, random
 
 from app.config import settings
 from app.database import get_db, engine, Base
+from app.cache import cache
 from app.models import (
     User, Institution, Application, Document, DocumentVersion, Finding,
     ComplianceCheck, ValidationRun, ReviewAction, DecisionRecord,
@@ -119,9 +120,15 @@ def get_current_user(token: Optional[str] = Depends(oauth2_scheme), db: Session 
             payload = decode_token(token)
             user_id = payload.get("sub")
             if user_id:
+                cache_key = f"user_{user_id}"
+                cached_user = cache.get(cache_key)
+                if cached_user and cached_user.is_active:
+                    return db.merge(cached_user, load=False)
                 user = db.query(User).filter(User.id == int(user_id)).first()
                 if user and user.is_active:
-                    return user
+                    db.expunge(user)
+                    cache.set(cache_key, user, ttl=120.0)
+                    return db.merge(user, load=False)
         except Exception:
             pass
     # Fallback to first active user if token missing for testing
@@ -226,6 +233,11 @@ def get_me(current_user: User = Depends(get_current_user)):
 # ============================================================
 @app.get("/institution/profile", response_model=InstitutionOut, tags=["Institution"])
 def get_institution_profile(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    cache_key = f"inst_prof_{current_user.institution_id or current_user.id}"
+    cached_val = cache.get(cache_key)
+    if cached_val is not None:
+        return cached_val
+
     # Find linked institution or create default for institution user
     inst = None
     if current_user.institution_id:
@@ -260,6 +272,7 @@ def get_institution_profile(db: Session = Depends(get_db), current_user: User = 
         current_user.institution_id = inst.id
         db.commit()
 
+    cache.set(cache_key, inst, ttl=60.0)
     return inst
 
 
@@ -284,6 +297,7 @@ def update_institution_profile(
     inst.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(inst)
+    cache.clear()
 
     log_audit(db, current_user, "Institution Profile Updated", "institution", str(inst.id), None, {"name": inst.name})
     return inst
@@ -296,6 +310,10 @@ def update_institution_profile(
 def get_dashboard_stats(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     role = normalize_role(current_user.role)
     is_inst = (role == UserRole.INSTITUTION.value)
+    cache_key = f"stats_{current_user.id}_{role}"
+    cached_val = cache.get(cache_key)
+    if cached_val is not None:
+        return cached_val
 
     base_query = db.query(Application)
     if is_inst:
@@ -353,7 +371,7 @@ def get_dashboard_stats(db: Session = Depends(get_db), current_user: User = Depe
             if f_stat == "open":
                 open_findings += f_cnt
 
-    return DashboardStats(
+    stats_result = DashboardStats(
         institution_profile=inst_profile_data,
         total_applications=total_apps,
         draft_applications=draft_count,
@@ -376,6 +394,8 @@ def get_dashboard_stats(db: Session = Depends(get_db), current_user: User = Depe
             "DECISION_RECORDED": decision_recorded_count
         }
     )
+    cache.set(cache_key, stats_result, ttl=30.0)
+    return stats_result
 
 
 # ============================================================
@@ -392,6 +412,11 @@ def list_applications(
     current_user: User = Depends(get_current_user)
 ):
     role = normalize_role(current_user.role)
+    cache_key = f"apps_{current_user.id}_{role}_{status}_{stage}_{search}_{skip}_{limit}"
+    cached_val = cache.get(cache_key)
+    if cached_val is not None:
+        return cached_val
+
     q = db.query(Application)
 
     # 1. Enforce strict institution isolation
@@ -399,21 +424,18 @@ def list_applications(
         q = q.filter(Application.submitted_by == current_user.id)
     # 2. Scrutiny Officer view
     elif role == UserRole.SCRUTINY_OFFICER.value:
-        # sees applications ready for review or under scrutiny
         q = q.filter(or_(
             Application.status.in_(["READY_FOR_REVIEW", "UNDER_SCRUTINY", "submitted", "under_review", "CLARIFICATION_REQUESTED"]),
             Application.verification_officer_id == current_user.id
         ))
     # 3. Compliance Officer view
     elif role == UserRole.COMPLIANCE_OFFICER.value:
-        # sees applications in compliance review or beyond
         q = q.filter(or_(
             Application.status.in_(["UNDER_COMPLIANCE_REVIEW", "compliance_review", "DOC_VERIFIED", "DECISION_RECORDED"]),
             Application.compliance_reviewer_id == current_user.id
         ))
     # 4. Chairman / Decision-Maker view
     elif role == UserRole.CHAIRMAN.value:
-        # sees applications pending decision or decided
         q = q.filter(or_(
             Application.current_stage.in_(["decision", "completed"]),
             Application.status.in_(["DECISION_RECORDED", "UNDER_COMPLIANCE_REVIEW", "decision_pending", "cleared", "rejected"])
@@ -430,7 +452,16 @@ def list_applications(
             Application.city.ilike(f"%{search}%")
         ))
 
-    return q.order_by(Application.submitted_at.desc()).offset(skip).limit(limit).all()
+    q = q.options(
+        selectinload(Application.documents).selectinload(Document.versions),
+        selectinload(Application.findings),
+        selectinload(Application.compliance_checks),
+        selectinload(Application.review_actions),
+        joinedload(Application.decision_record)
+    )
+    apps = q.order_by(Application.submitted_at.desc()).offset(skip).limit(limit).all()
+    cache.set(cache_key, apps, ttl=30.0)
+    return apps
 
 
 @app.get("/applications/{app_id}", response_model=ApplicationOut, tags=["Applications"])
@@ -439,7 +470,18 @@ def get_application(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    app_obj = db.query(Application).filter(Application.application_id == app_id).first()
+    cache_key = f"app_detail_{app_id}_{current_user.id}"
+    cached_val = cache.get(cache_key)
+    if cached_val is not None:
+        return cached_val
+
+    app_obj = db.query(Application).options(
+        selectinload(Application.documents).selectinload(Document.versions),
+        selectinload(Application.findings),
+        selectinload(Application.compliance_checks),
+        selectinload(Application.review_actions),
+        joinedload(Application.decision_record)
+    ).filter(Application.application_id == app_id).first()
     if not app_obj:
         raise HTTPException(status_code=404, detail="Application not found")
 
@@ -448,6 +490,7 @@ def get_application(
     if role == UserRole.INSTITUTION.value and app_obj.submitted_by != current_user.id:
         raise HTTPException(status_code=403, detail="Unauthorized: You cannot access another institution's application.")
 
+    cache.set(cache_key, app_obj, ttl=30.0)
     return app_obj
 
 
@@ -486,6 +529,7 @@ def create_application(
     db.add(app_obj)
     db.commit()
     db.refresh(app_obj)
+    cache.clear()
 
     log_audit(db, current_user, "Draft Application Created", "application",
               generated_app_id, app_obj.id, {"institution": app_obj.institution_name})
@@ -630,6 +674,7 @@ async def upload_application_document(
         db.add(new_doc)
         db.commit()
         db.refresh(new_doc)
+        cache.clear()
         doc_to_return = new_doc
 
         log_audit(db, current_user, "Document Uploaded", "document",
@@ -694,6 +739,7 @@ def validate_application(
     db.commit()
 
     validation_result = run_central_ai_validation(db, app_id, current_user.id)
+    cache.clear()
     return validation_result
 
 
@@ -722,6 +768,7 @@ def submit_to_scrutiny_officer(
     app_obj.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(app_obj)
+    cache.clear()
 
     log_audit(db, current_user, "Submitted to Scrutiny Officer", "application",
               app_id, app_obj.id, {"stage": "scrutiny"})
@@ -783,6 +830,7 @@ def submit_clarification_response(
 
     db.commit()
     db.refresh(app_obj)
+    cache.clear()
 
     log_audit(db, current_user, "Clarification Submitted by Institution", "application",
               app_id, app_obj.id, {"response": req.response_text, "resumed_status": app_obj.status})
@@ -845,6 +893,7 @@ def record_scrutiny_action(
     app_obj.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(app_obj)
+    cache.clear()
 
     log_audit(db, current_user, f"Scrutiny Review Action: {req.action_type}", "application",
               app_id, app_obj.id, {"comments": req.comments, "stage": app_obj.current_stage})
@@ -902,6 +951,7 @@ def record_compliance_action(
     app_obj.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(app_obj)
+    cache.clear()
 
     log_audit(db, current_user, f"Compliance Review Action: {req.action_type}", "application",
               app_id, app_obj.id, {"comments": req.comments, "stage": app_obj.current_stage})
@@ -975,6 +1025,7 @@ def record_official_decision(
     db.add(notif)
     db.commit()
     db.refresh(app_obj)
+    cache.clear()
 
     log_audit(db, current_user, f"Official Decision Recorded: {decision_norm}", "application",
               app_id, app_obj.id, {"order_no": order_no, "decision": decision_norm, "reasons": req.reasons})
@@ -1071,6 +1122,7 @@ def officer_send_suggestions(
     db.add(notif)
     db.commit()
     db.refresh(app_obj)
+    cache.clear()
 
     log_audit(db, current_user, "Officer Sent Suggestions to Institution", "application",
               app_id, app_obj.id, {"suggestions": suggestions_text})
@@ -1152,6 +1204,7 @@ def officer_approve_application(
     db.add(notif)
     db.commit()
     db.refresh(app_obj)
+    cache.clear()
 
     log_audit(db, current_user, f"Application Approved & Certificate Issued ({cert_no})", "application",
               app_id, app_obj.id, {"certificate_no": cert_no, "order_no": order_no})
@@ -1210,9 +1263,15 @@ def get_application_certificate(
 # ============================================================
 @app.get("/notifications", response_model=List[NotificationOut], tags=["Notifications"])
 def get_user_notifications(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    return db.query(Notification).filter(
+    cache_key = f"notifs_{current_user.id}"
+    cached_val = cache.get(cache_key)
+    if cached_val is not None:
+        return cached_val
+    notifs = db.query(Notification).filter(
         Notification.user_id == current_user.id
     ).order_by(Notification.created_at.desc()).limit(30).all()
+    cache.set(cache_key, notifs, ttl=30.0)
+    return notifs
 
 
 @app.put("/notifications/{notif_id}/read", tags=["Notifications"])
@@ -1221,6 +1280,7 @@ def mark_notification_read(notif_id: int, db: Session = Depends(get_db), current
     if notif:
         notif.is_read = True
         db.commit()
+        cache.clear()
     return {"status": "ok"}
 
 
