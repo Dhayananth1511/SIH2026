@@ -334,6 +334,18 @@ export const getAdminUsers = async (): Promise<User[]> => {
   return cachedGet<User[]>('/admin/users');
 };
 
+export const createAdminUser = async (data: { email: string; full_name: string; password: string; role: string }): Promise<User> => {
+  clearClientCache();
+  const res = await api.post<User>('/admin/users', data);
+  return res.data;
+};
+
+export const deleteAdminUser = async (userId: number | string): Promise<any> => {
+  clearClientCache();
+  const res = await api.delete(`/admin/users/${Number(userId)}`);
+  return res.data;
+};
+
 export const updateAdminUserRole = async (userId: number | string, role: string, isActive?: boolean): Promise<User> => {
   clearClientCache();
   const res = await api.put<User>(`/admin/users/${Number(userId)}/role`, { role, is_active: isActive });

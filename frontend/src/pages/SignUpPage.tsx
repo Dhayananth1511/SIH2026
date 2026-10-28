@@ -2,14 +2,14 @@ import React, { useState } from 'react';
 import { IndianEmblem, IsometricCampusGraphic } from '../components/Emblems';
 import { register as apiRegister } from '../api';
 import type { UserRole } from '../types';
-import { GraduationCap, FileSearch, Scale, Building2, Settings } from 'lucide-react';
+import { GraduationCap } from 'lucide-react';
 
 interface Props {
   onNavigateToLogin: () => void;
 }
 
 export default function SignUpPage({ onNavigateToLogin }: Props) {
-  const [role, setRole] = useState<UserRole>('institution');
+  const [role] = useState<UserRole>('institution');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [mobile, setMobile] = useState('');
@@ -17,14 +17,6 @@ export default function SignUpPage({ onNavigateToLogin }: Props) {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
-
-  const roleOptions: { key: UserRole; label: string; icon: React.ReactNode; desc: string }[] = [
-    { key: 'institution', label: 'Institution User', icon: <GraduationCap size={14} />, desc: 'College application & doc upload' },
-    { key: 'verification_officer', label: 'Verification Officer', icon: <FileSearch size={14} />, desc: 'OCR & document verification' },
-    { key: 'compliance_reviewer', label: 'Compliance Reviewer', icon: <Scale size={14} />, desc: 'Statutory norms scrutiny' },
-    { key: 'decision_maker', label: 'AICTE Decision-Maker', icon: <Building2 size={14} />, desc: 'Final approval/deficiency decree' },
-    { key: 'admin', label: 'System Administrator', icon: <Settings size={14} />, desc: 'Users & rule configuration' },
-  ];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,7 +27,7 @@ export default function SignUpPage({ onNavigateToLogin }: Props) {
         email,
         full_name: fullName,
         password,
-        role: role
+        role: 'institution'
       });
       setSuccess(true);
       setTimeout(() => {
@@ -89,86 +81,86 @@ export default function SignUpPage({ onNavigateToLogin }: Props) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '28px 20px'
+        padding: '32px 20px'
       }}>
         <div style={{
           width: '100%',
-          maxWidth: '1020px',
+          maxWidth: '980px',
           background: '#ffffff',
           borderRadius: '16px',
           boxShadow: '0 4px 20px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04)',
           border: '1px solid #e2e8f0',
           display: 'grid',
-          gridTemplateColumns: '1fr 1.25fr',
+          gridTemplateColumns: '1fr 1.2fr',
           overflow: 'hidden'
         }}>
           {/* Left Panel: Graphic */}
           <div style={{
-            padding: '32px 24px',
+            padding: '36px 28px',
             background: 'linear-gradient(145deg, #f0f7ff 0%, #e0f2fe 100%)',
             borderRight: '1px solid #e2e8f0',
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'center',
-            alignItems: 'center'
+            alignItems: 'center',
+            textAlign: 'center'
           }}>
             <IsometricCampusGraphic />
-            <div style={{ marginTop: '24px', textAlign: 'center' }}>
-              <div style={{ fontSize: '13px', fontWeight: '700', color: '#1e3a8a' }}>
-                Role-Enforced Governance
+            <div style={{ marginTop: '24px' }}>
+              <div style={{ fontSize: '14px', fontWeight: '800', color: '#1e3a8a' }}>
+                Institutional Portal Onboarding
               </div>
-              <div style={{ fontSize: '11.5px', color: '#64748b', marginTop: '4px', maxWidth: '280px' }}>
-                Each user role adheres strictly to assigned statutory powers with an immutable cryptographic audit ledger.
+              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '6px', maxWidth: '280px', lineHeight: '1.5' }}>
+                Register your technical institute or university to submit AICTE approval applications, upload compliance documents, and receive real-time AI validation reports.
               </div>
             </div>
           </div>
 
           {/* Right Panel: Sign Up Form */}
-          <div style={{ padding: '36px 36px', overflowY: 'auto', maxHeight: '90vh' }}>
-            <div style={{ marginBottom: '18px' }}>
+          <div style={{ padding: '36px 36px', overflowY: 'auto' }}>
+            <div style={{ marginBottom: '20px' }}>
               <h2 style={{ fontSize: '22px', fontWeight: '800', color: '#0f172a', letterSpacing: '-0.3px', marginBottom: '4px' }}>
-                Register Account
+                Register Institution
               </h2>
               <p style={{ fontSize: '12.5px', color: '#64748b' }}>
-                Join the AICTE Statutory Compliance Platform
+                Create your official AICTE applicant account
               </p>
             </div>
 
-            {/* Role Picker */}
+            {/* Role Designation: Fixed to Institution */}
             <div style={{ marginBottom: '18px' }}>
               <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
-                Select Role Designation
+                Role Designation
               </label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                {roleOptions.map(r => (
-                  <button
-                    key={r.key}
-                    type="button"
-                    onClick={() => setRole(r.key)}
-                    style={{
-                      padding: '8px 10px',
-                      background: role === r.key ? '#ffffff' : '#f8fafc',
-                      border: role === r.key ? '1.5px solid #09090b' : '1px solid #e2e8f0',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      transition: 'all 0.15s',
-                      boxShadow: role === r.key ? '0 2px 6px rgba(0,0,0,0.06)' : 'none'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                      <span className="black-logo-badge-sm">
-                        {r.icon}
-                      </span>
-                      <div style={{ fontSize: '11.5px', fontWeight: '700', color: role === r.key ? '#000000' : '#1e293b' }}>
-                        {r.label}
-                      </div>
-                    </div>
-                    <div style={{ fontSize: '9.5px', color: '#64748b' }}>
-                      {r.desc}
-                    </div>
-                  </button>
-                ))}
+              <div style={{
+                padding: '10px 14px',
+                background: '#f0fdf4',
+                border: '1.5px solid #22c55e',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px'
+              }}>
+                <span style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '6px',
+                  background: '#15803d',
+                  color: '#ffffff'
+                }}>
+                  <GraduationCap size={18} />
+                </span>
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: '700', color: '#15803d' }}>
+                    Institution User
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#4b5563' }}>
+                    Authorized for college &amp; university approval submissions.
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -182,7 +174,7 @@ export default function SignUpPage({ onNavigateToLogin }: Props) {
                 fontSize: '12px',
                 marginBottom: '16px'
               }}>
-                ✓ Account created successfully! Redirecting to login...
+                ✓ Institution account created successfully! Redirecting to login...
               </div>
             )}
 
@@ -203,13 +195,13 @@ export default function SignUpPage({ onNavigateToLogin }: Props) {
             <form onSubmit={handleSubmit}>
               <div style={{ marginBottom: '14px' }}>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: '#334155', marginBottom: '4px' }}>
-                  Full Name / Institution Name
+                  Institution Name / Authorized Signatory
                 </label>
                 <input
                   type="text"
                   value={fullName}
                   onChange={e => setFullName(e.target.value)}
-                  placeholder="e.g. Dr. Priya Sharma or ABC Institute of Technology"
+                  placeholder="e.g. ABC Institute of Technology"
                   required
                   style={{
                     width: '100%',
@@ -231,7 +223,7 @@ export default function SignUpPage({ onNavigateToLogin }: Props) {
                   type="email"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
-                  placeholder="e.g. officer@aicte.gov.in or registrar@college.edu"
+                  placeholder="e.g. registrar@college.edu.in"
                   required
                   style={{
                     width: '100%',
@@ -294,14 +286,14 @@ export default function SignUpPage({ onNavigateToLogin }: Props) {
                 style={{
                   width: '100%',
                   padding: '11px',
-                  background: '#2563eb',
+                  background: '#09090b',
                   color: '#ffffff',
                   fontSize: '13.5px',
-                  fontWeight: '600',
+                  fontWeight: '700',
                   border: 'none',
                   borderRadius: '8px',
                   cursor: 'pointer',
-                  boxShadow: '0 2px 4px rgba(37, 99, 235, 0.25)',
+                  boxShadow: '0 2px 6px rgba(0, 0, 0, 0.2)',
                   transition: 'background 0.15s'
                 }}
               >
@@ -309,7 +301,7 @@ export default function SignUpPage({ onNavigateToLogin }: Props) {
               </button>
             </form>
 
-            <div style={{ textAlign: 'center', marginTop: '16px', fontSize: '12.5px', color: '#64748b' }}>
+            <div style={{ textAlign: 'center', marginTop: '18px', fontSize: '12.5px', color: '#64748b' }}>
               Already registered?{' '}
               <button
                 type="button"

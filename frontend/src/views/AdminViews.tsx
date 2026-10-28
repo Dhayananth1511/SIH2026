@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
   getAdminUsers,
+  createAdminUser,
+  deleteAdminUser,
   updateAdminUserRole,
   getAdminRules,
   createAdminRule,
@@ -36,6 +38,16 @@ export default function AdminViews({ subPage, onNavigate }: Props) {
   const [loading, setLoading] = useState(true);
   const [feedbackMsg, setFeedbackMsg] = useState('');
 
+  // User Create Modal
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [userForm, setUserForm] = useState({
+    full_name: '',
+    email: '',
+    password: '',
+    role: 'officer'
+  });
+  const [userError, setUserError] = useState('');
+
   // Rule Create / Edit Modal
   const [showRuleModal, setShowRuleModal] = useState(false);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
@@ -66,6 +78,34 @@ export default function AdminViews({ subPage, onNavigate }: Props) {
       setAuditLogs(auditData);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setUserError('');
+    try {
+      await createAdminUser(userForm);
+      setFeedbackMsg(`✓ User account created for ${userForm.full_name} (${userForm.role})`);
+      setShowUserModal(false);
+      setUserForm({ full_name: '', email: '', password: '', role: 'officer' });
+      loadAdminData();
+      setTimeout(() => setFeedbackMsg(''), 3000);
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail;
+      setUserError(typeof detail === 'string' ? detail : err?.message || 'Failed to create user account.');
+    }
+  };
+
+  const handleDeleteUser = async (userId: number, userEmail: string) => {
+    if (!confirm(`Are you sure you want to delete user ${userEmail}? This will permanently remove their access.`)) return;
+    try {
+      await deleteAdminUser(userId);
+      setFeedbackMsg(`✓ User ${userEmail} deleted successfully.`);
+      loadAdminData();
+      setTimeout(() => setFeedbackMsg(''), 3000);
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Failed to delete user.');
     }
   };
 
@@ -195,9 +235,19 @@ export default function AdminViews({ subPage, onNavigate }: Props) {
                 User &amp; Institution Account Management
               </h2>
               <span style={{ fontSize: '12px', color: '#64748b' }}>
-                Role assignment across the 5 official regulatory roles
+                Admin access: Provision Government Officers &amp; Administrators, or manage registered Institutions
               </span>
             </div>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => {
+                setUserError('');
+                setUserForm({ full_name: '', email: '', password: '', role: 'officer' });
+                setShowUserModal(true);
+              }}
+            >
+              <Plus size={14} /> Create Official / Administrator
+            </button>
           </div>
 
           <div className="table-responsive">
@@ -210,6 +260,7 @@ export default function AdminViews({ subPage, onNavigate }: Props) {
                   <th>Current Role</th>
                   <th>Status</th>
                   <th>Reassign Role</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -236,11 +287,23 @@ export default function AdminViews({ subPage, onNavigate }: Props) {
                         onChange={e => handleRoleChange(Number(u.id), e.target.value)}
                       >
                         <option value="institution">Institution</option>
+                        <option value="officer">AICTE Approval Officer</option>
                         <option value="scrutiny_officer">Scrutiny Officer</option>
                         <option value="compliance_officer">Compliance Officer</option>
                         <option value="chairman">Authorized Decision-Maker</option>
                         <option value="admin">System Administrator</option>
                       </select>
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        style={{ color: '#dc2626', borderColor: '#fca5a5', padding: '3px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                        onClick={() => handleDeleteUser(Number(u.id), u.email)}
+                        title="Delete user account"
+                      >
+                        <Trash2 size={12} /> Delete
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -493,6 +556,107 @@ export default function AdminViews({ subPage, onNavigate }: Props) {
                 </button>
                 <button type="submit" className="btn btn-primary btn-sm">
                   Save Rule
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* User Create Modal */}
+      {showUserModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div className="gov-card" style={{ maxWidth: '480px', width: '100%', padding: '24px', background: '#ffffff', borderRadius: '12px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                Provision Government Official / Administrator
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowUserModal(false)}
+                style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#64748b' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {userError && (
+              <div style={{ padding: '8px 12px', background: '#fee2e2', color: '#b91c1c', borderRadius: '6px', fontSize: '12px', marginBottom: '14px' }}>
+                {userError}
+              </div>
+            )}
+
+            <form onSubmit={handleCreateUser}>
+              <div style={{ marginBottom: '12px' }}>
+                <label className="form-label" style={{ fontSize: '12px', fontWeight: '600' }}>Full Name / Official Name:</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  value={userForm.full_name}
+                  onChange={e => setUserForm({ ...userForm, full_name: e.target.value })}
+                  placeholder="e.g. Arun or Dr. Priya Sharma"
+                  required
+                />
+              </div>
+
+              <div style={{ marginBottom: '12px' }}>
+                <label className="form-label" style={{ fontSize: '12px', fontWeight: '600' }}>Official Email Address:</label>
+                <input
+                  type="email"
+                  className="form-control"
+                  value={userForm.email}
+                  onChange={e => setUserForm({ ...userForm, email: e.target.value })}
+                  placeholder="e.g. Arun@gov.in or officer@aicte.gov.in"
+                  required
+                />
+              </div>
+
+              <div style={{ marginBottom: '12px' }}>
+                <label className="form-label" style={{ fontSize: '12px', fontWeight: '600' }}>Regulatory Role Designation:</label>
+                <select
+                  className="form-control"
+                  value={userForm.role}
+                  onChange={e => setUserForm({ ...userForm, role: e.target.value })}
+                  required
+                >
+                  <option value="officer">AICTE Approval Officer (Single-Officer Review)</option>
+                  <option value="admin">System Administrator</option>
+                  <option value="verification_officer">Verification Officer</option>
+                  <option value="compliance_reviewer">Compliance Reviewer</option>
+                  <option value="decision_maker">Decision Maker</option>
+                </select>
+              </div>
+
+              <div style={{ marginBottom: '18px' }}>
+                <label className="form-label" style={{ fontSize: '12px', fontWeight: '600' }}>Account Password:</label>
+                <input
+                  type="password"
+                  className="form-control"
+                  value={userForm.password}
+                  onChange={e => setUserForm({ ...userForm, password: e.target.value })}
+                  placeholder="Set initial password"
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowUserModal(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary btn-sm">
+                  Provision Official Account
                 </button>
               </div>
             </form>

@@ -78,57 +78,21 @@ def seed():
         db.commit()
         db.refresh(inst2)
 
-    print("2. Seeding Unified Role Demo Users...")
+    print("2. Seeding Unified Role Users (Admin & AICTE Approval Officer Arun)...")
     demo_users = [
         {
-            "email": "institution@example.com",
-            "full_name": "ABC Institute of Engineering & Technology",
-            "role": UserRole.INSTITUTION.value,
-            "pass": "inst123",
-            "inst_id": inst1.id
-        },
-        {
-            "email": "officer@aicte.gov.in",
-            "full_name": "Dr. Priya Sharma (AICTE Scrutiny & Approval Officer)",
-            "role": UserRole.OFFICER.value,
-            "pass": "officer123",
-            "inst_id": None
-        },
-        # Backwards compatible officer aliases
-        {
-            "email": "verification@aicte.gov.in",
-            "full_name": "Dr. Priya Sharma (Scrutiny & Approval Officer)",
-            "role": UserRole.OFFICER.value,
-            "pass": "officer123",
-            "inst_id": None
-        },
-        {
-            "email": "compliance@aicte.gov.in",
-            "full_name": "Prof. Rajesh Deshmukh (Compliance Officer)",
-            "role": UserRole.OFFICER.value,
-            "pass": "reviewer123",
-            "inst_id": None
-        },
-        {
-            "email": "decision@aicte.gov.in",
-            "full_name": "Dr. Anil Sahasrabudhe (Approval Officer)",
-            "role": UserRole.OFFICER.value,
-            "pass": "decision123",
-            "inst_id": None
-        },
-        {
-            "email": "admin@aicte.gov.in",
-            "full_name": "Sanjay Verma (System Administrator)",
+            "email": "admin@gov.in",
+            "full_name": "System Administrator",
             "role": UserRole.ADMIN.value,
-            "pass": "admin123",
+            "pass": "admin",
             "inst_id": None
         },
         {
-            "email": "institution2@example.com",
-            "full_name": "XYZ Institute of Technology",
-            "role": UserRole.INSTITUTION.value,
-            "pass": "inst123",
-            "inst_id": inst2.id
+            "email": "arun@gov.in",
+            "full_name": "Arun",
+            "role": UserRole.OFFICER.value,
+            "pass": "arun",
+            "inst_id": None
         }
     ]
 
@@ -155,10 +119,8 @@ def seed():
             db.commit()
         user_map[u_data["email"]] = u
 
-    inst_user = user_map["institution@example.com"]
-    inst_user2 = user_map["institution2@example.com"]
-    officer_user = user_map["officer@aicte.gov.in"]
-    admin_user = user_map["admin@aicte.gov.in"]
+    admin_user = user_map["admin@gov.in"]
+    officer_user = user_map["arun@gov.in"]
 
     print("3. Seeding Regulatory Compliance Rules...")
     standard_rules = [
@@ -243,7 +205,7 @@ def seed():
             status=AppStatus.READY_FOR_REVIEW.value,
             current_stage="ready_for_review",
             scrutiny_score=100.0,
-            submitted_by=inst_user.id,
+            submitted_by=None,
             submitted_at=datetime.utcnow() - timedelta(days=1),
             updated_at=datetime.utcnow() - timedelta(hours=2),
             ai_suggestions=[]
@@ -273,7 +235,7 @@ def seed():
                 verification_result="Verified against AICTE Approval Process Handbook (APH 2026-27).",
                 extracted_data={"institution_name": "ABC Institute of Engineering & Technology", **ed},
                 uploaded_at=datetime.utcnow() - timedelta(days=1),
-                uploaded_by=inst_user.id
+                uploaded_by=None
             )
             db.add(d)
 
@@ -300,7 +262,7 @@ def seed():
             db.add(chk)
 
         notif1 = Notification(
-            user_id=inst_user.id,
+            user_id=officer_user.id,
             application_id=app1.id,
             title="AI Validation Cleared: Ready for Officer Approval",
             message="All mandatory AICTE document checks for Application #APP-2026-0001 have passed with 100% score. Dossier submitted to AICTE Approval Officer.",
