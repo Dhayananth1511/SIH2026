@@ -51,13 +51,15 @@ export default function LoginPage({ onNavigateToSignUp, onLoginSuccess }: Props)
     runHealthCheck();
   }, []);
 
-  const handleSaveCustomUrl = async (e?: React.FormEvent) => {
+  const handleSaveCustomUrl = async (e?: React.FormEvent, overrideUrl?: string) => {
     if (e) e.preventDefault();
-    if (!customInput || customInput.trim() === '') return;
+    const target = overrideUrl || customInput;
+    if (!target || target.trim() === '') return;
     setTestingHealth(true);
     setConfigMsg(null);
     try {
-      const cleaned = setCustomApiUrl(customInput);
+      const cleaned = setCustomApiUrl(target);
+      setCustomInput(cleaned);
       setActiveUrl(cleaned);
       const res = await checkBackendHealth(cleaned);
       if (res.ok) {
@@ -573,9 +575,8 @@ export default function LoginPage({ onNavigateToSignUp, onLoginSuccess }: Props)
                     <button
                       type="button"
                       onClick={() => {
-                        const url = 'https://aicte-compliance-backend.onrender.com';
-                        setCustomInput(url);
-                        handleSaveCustomUrl();
+                        const url = 'https://aicte-compliance-backend-rglx.onrender.com';
+                        handleSaveCustomUrl(undefined, url);
                       }}
                       style={{
                         background: '#f1f5f9',
@@ -587,14 +588,13 @@ export default function LoginPage({ onNavigateToSignUp, onLoginSuccess }: Props)
                         color: '#334155'
                       }}
                     >
-                      Preset: Render Backend
+                      Preset: Render Backend (rglx)
                     </button>
                     <button
                       type="button"
                       onClick={() => {
                         const url = 'http://localhost:8000';
-                        setCustomInput(url);
-                        handleSaveCustomUrl();
+                        handleSaveCustomUrl(undefined, url);
                       }}
                       style={{
                         background: '#f1f5f9',

@@ -13,30 +13,45 @@ import type {
   Notification
 } from './types';
 
+export const formatApiUrl = (raw: string | undefined | null): string | null => {
+  if (!raw) return null;
+  let url = raw.trim().replace(/\/+$/, '');
+  if (!url || url === 'undefined' || url === 'null') return null;
+
+  // If scheme is missing
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    const isLocal = url.includes('localhost') || url.includes('127.0.0.1');
+    url = (isLocal ? 'http://' : 'https://') + url;
+  }
+
+  try {
+    const parsed = new URL(url);
+    // If Render internal service name was passed (no dot in hostname, e.g. aicte-compliance-backend-rglx)
+    if (!parsed.hostname.includes('.') && parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') {
+      parsed.hostname = `${parsed.hostname}.onrender.com`;
+    }
+    return parsed.origin;
+  } catch {
+    if (!url.includes('.') && !url.includes('localhost') && !url.includes('127.0.0.1')) {
+      url = `${url}.onrender.com`;
+    }
+    return url;
+  }
+};
+
 export const getBaseUrl = (): string => {
   // 1. User or Evaluator runtime override stored in browser
   if (typeof window !== 'undefined') {
     const custom = localStorage.getItem('AICTE_API_URL') || localStorage.getItem('VITE_API_URL');
-    if (custom && custom.trim() !== '') {
-      let cleaned = custom.trim().replace(/\/+$/, '');
-      if (!cleaned.startsWith('http://') && !cleaned.startsWith('https://')) {
-        cleaned = `https://${cleaned}`;
-      }
-      return cleaned;
-    }
+    const formatted = formatApiUrl(custom);
+    if (formatted) return formatted;
   }
 
   // 2. Vite build-time environment variable
-  let url = import.meta.env.VITE_API_URL as string | undefined;
-  if (url && url.trim() !== '' && url !== 'undefined' && url !== 'null') {
-    url = url.trim().replace(/\/+$/, '');
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      url = `https://${url}`;
-    }
-    return url;
-  }
+  const buildUrl = formatApiUrl(import.meta.env.VITE_API_URL as string | undefined);
+  if (buildUrl) return buildUrl;
 
-  // 3. Smart domain auto-detection
+  // 3. Smart domain auto-detection from browser URL
   if (typeof window !== 'undefined' && window.location && window.location.hostname) {
     const host = window.location.hostname.toLowerCase();
     const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host.startsWith('192.168.') || host.startsWith('10.');
@@ -46,14 +61,14 @@ export const getBaseUrl = (): string => {
 
     // Deployed on Render (*.onrender.com)
     if (host.includes('.onrender.com')) {
-      if (host.includes('-frontend.')) {
-        return `https://${host.replace('-frontend.', '-backend.')}`;
+      if (host.includes('frontend')) {
+        return `https://${host.replace('frontend', 'backend')}`;
       }
-      return 'https://aicte-compliance-backend.onrender.com';
+      return 'https://aicte-compliance-backend-rglx.onrender.com';
     }
 
     // Any other cloud HTTPS domain
-    return 'https://aicte-compliance-backend.onrender.com';
+    return 'https://aicte-compliance-backend-rglx.onrender.com';
   }
 
   return 'http://127.0.0.1:8000';
@@ -63,17 +78,14 @@ export let BASE = getBaseUrl();
 export const api = axios.create({ baseURL: BASE, timeout: 60000 });
 
 export const setCustomApiUrl = (newUrl: string): string => {
-  let cleaned = newUrl.trim().replace(/\/+$/, '');
-  if (!cleaned.startsWith('http://') && !cleaned.startsWith('https://')) {
-    cleaned = `https://${cleaned}`;
-  }
+  const formatted = formatApiUrl(newUrl) || newUrl.trim();
   if (typeof window !== 'undefined') {
-    localStorage.setItem('AICTE_API_URL', cleaned);
+    localStorage.setItem('AICTE_API_URL', formatted);
   }
-  BASE = cleaned;
-  api.defaults.baseURL = cleaned;
+  BASE = formatted;
+  api.defaults.baseURL = formatted;
   clearClientCache();
-  return cleaned;
+  return formatted;
 };
 
 export const resetApiUrl = (): string => {
