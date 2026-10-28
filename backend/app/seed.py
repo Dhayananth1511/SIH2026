@@ -13,7 +13,8 @@ from app.models import (
     User, Institution, Application, Document, DocumentVersion, Finding,
     ComplianceCheck, ValidationRun, ReviewAction, DecisionRecord,
     Notification, RegulatoryRule, AuditEvent, UserRole, AppStatus,
-    FindingSeverity, FindingStatus
+    FindingSeverity, FindingStatus, AicteMasterRecord, AuthorityVerification,
+    InfrastructureEvidence
 )
 from app.security import get_password_hash
 from datetime import datetime, date, timedelta
@@ -273,8 +274,106 @@ def seed():
         db.add(notif1)
         db.commit()
 
+    # 5. Seed AICTE Master Record for ABC Institute
+    master_rec = db.query(AicteMasterRecord).filter(AicteMasterRecord.institution_id == inst1.id).first()
+    if not master_rec:
+        master_rec = AicteMasterRecord(
+            institution_id=inst1.id,
+            aicte_id=inst1.aicte_id,
+            institution_name=inst1.name,
+            ter_payment={
+                "receipt_no": "AICTE-TER-2026-98124",
+                "amount": "₹1,50,000",
+                "payment_date": "2026-02-14",
+                "bank_ref": "SBIN00049219382",
+                "status": "CONFIRMED"
+            },
+            previous_eoa=[
+                {"year": "2025-26", "status": "APPROVED", "order_number": f"AICTE/WEST/{inst1.aicte_id}/2025/EOA", "date": "2025-06-12"},
+                {"year": "2024-25", "status": "APPROVED", "order_number": f"AICTE/WEST/{inst1.aicte_id}/2024/EOA", "date": "2024-06-18"},
+                {"year": "2023-24", "status": "APPROVED", "order_number": f"AICTE/WEST/{inst1.aicte_id}/2023/EOA", "date": "2023-06-15"}
+            ],
+            approved_programmes=[
+                {"program": "UG Engineering", "course": "Computer Science & Engineering", "sanctioned_intake": 180},
+                {"program": "UG Engineering", "course": "Electronics & Communication Engineering", "sanctioned_intake": 120},
+                {"program": "UG Engineering", "course": "Artificial Intelligence & Data Science", "sanctioned_intake": 60},
+                {"program": "PG Engineering", "course": "M.Tech Computer Science & Engineering", "sanctioned_intake": 18}
+            ],
+            total_sanctioned_intake=378,
+            accreditation_details={
+                "nba": "Tier-1 Accredited for 3 UG Programs (CSE, ECE, Mech) - Valid till 30-06-2027",
+                "naac": "Grade A+ (CGPA 3.48), Cycle 2 - Valid up to 2028"
+            },
+            faculty_epf_roster={
+                "total_faculty": 72,
+                "cadre_ratio": "1:2:7.3 (Prof: 7, Assoc: 14, Asst: 51)",
+                "sfr_ratio": "1:18.5 Compliant",
+                "epf_registered_count": 72
+            },
+            past_deficiencies=[
+                {"year": "2023-24", "committee": "Standing Scrutiny Committee (SSC)", "finding": "Resolved: Building Structural Stability renewed", "status": "CLOSED"}
+            ],
+            registered_campus_acres=inst1.campus_acres or 5.5,
+            registered_gps={"latitude": 18.5204, "longitude": 73.8567, "address": "Knowledge Park, Pune, Maharashtra"},
+            last_synced_at=datetime.utcnow()
+        )
+        db.add(master_rec)
+        db.commit()
+
+    # 6. Seed Issuing Authority Verifications for APP-2026-0001
+    seeded_app = db.query(Application).filter(Application.application_id == "APP-2026-0001").first()
+    if seeded_app:
+        if db.query(AuthorityVerification).filter(AuthorityVerification.application_id == seeded_app.id).count() == 0:
+            auth_specs = [
+                ("State Directorate of Fire Prevention Services", "API_PORTAL", "VERIFIED", "MAH-FIRE-2026-88192", "https://fire.maharashtra.gov.in/verify", "State Fire Prevention Services Department", {"clearance_type": "Permanent Academic NOC", "expiry": "2027-05-30"}),
+                ("State Land Revenue Cadastre / Bhulekh", "QR_CODE", "VERIFIED", "KL-SURVEY-4021/B", "https://bhulekh.maharashtra.gov.in/cadastre", "Department of Land Records & Settlement", {"land_title": "Clear / Non-Encumbered", "contiguous_acres": 5.50}),
+                ("Municipal Corporation Town Planning / PWD", "URN_LOOKUP", "VERIFIED", "PWD-PUNE-STAB-9921", "https://pmc.gov.in/townplanning/verify", "Public Works Department", {"structural_stability": "Certified A-Grade", "seismic_zone": "Zone III Compliant"}),
+                ("Affiliating State Technical University", "API_PORTAL", "VERIFIED", "UNIV-SPPU-AFF-2026-04", "https://unipune.ac.in/affiliation/check", "Academic Affiliation Section", {"status": "Active Permanent Affiliation", "approved_courses": 4}),
+                ("National DigiLocker Academic Depository", "API_PORTAL", "VERIFIED", "DIGI-CERT-88129", "https://digilocker.gov.in/api/verify", "Ministry of Electronics and IT (MeitY)", {"doc_type": "Institutional Land & FDR Records", "integrity": "Cryptographically Sealed"})
+            ]
+            for a_name, v_type, a_stat, u_tok, s_url, s_agency, resp in auth_specs:
+                db.add(AuthorityVerification(
+                    application_id=seeded_app.id,
+                    authority_name=a_name,
+                    verification_type=v_type,
+                    status=a_stat,
+                    urn_or_token=u_tok,
+                    source_url=s_url,
+                    source_agency=s_agency,
+                    checked_at=datetime.utcnow(),
+                    response_payload=resp,
+                    discrepancy_details=None,
+                    is_conclusive=True
+                ))
+            db.commit()
+
+        # 7. Seed Infrastructure Evidence
+        if db.query(InfrastructureEvidence).filter(InfrastructureEvidence.application_id == seeded_app.id).count() == 0:
+            default_evidence = [
+                ("PHOTO_COMPUTER_CENTER", "Central Computing Facility & AI Lab", {"latitude": 18.5206, "longitude": 73.8569, "altitude": 560}, 25.0, True, [{"label": "Active Workstations", "count": 64, "confidence": 0.98}, {"label": "UPS Power Grid", "count": 2, "confidence": 0.95}], "COMPLIANT_ADVISORY", "Instructional terminal count meets APH Clause 5.3 norms for 360 intake."),
+                ("PHOTO_LIBRARY", "Central Library & Digital Reading Hall", {"latitude": 18.5202, "longitude": 73.8565, "altitude": 562}, 30.0, True, [{"label": "Reading Desks", "count": 120, "confidence": 0.97}, {"label": "Stack Racks", "count": 24, "confidence": 0.99}], "COMPLIANT_ADVISORY", "Carpet area and seating capacity verified compliant with Chapter II."),
+                ("PHOTO_BARRIER_FREE_RAMP", "Barrier-Free Access Ramp & Braille Lift", {"latitude": 18.5205, "longitude": 73.8568, "altitude": 560}, 15.0, True, [{"label": "Wheelchair Ramp Gradient 1:12", "count": 1, "confidence": 0.94}, {"label": "Accessible Handrails", "count": 2, "confidence": 0.96}], "COMPLIANT_ADVISORY", "Rights of Persons with Disabilities Act & AICTE barrier-free norms satisfied."),
+                ("PHOTO_FIRE_SAFETY", "Active Fire Hydrant & Sprinkler Assembly", {"latitude": 18.5208, "longitude": 73.8571, "altitude": 561}, 45.0, True, [{"label": "Fire Extinguisher ABC Type", "count": 4, "confidence": 0.99}, {"label": "Hydrant Valve Assembly", "count": 1, "confidence": 0.95}], "COMPLIANT_ADVISORY", "Operational fire suppression system installed per State Fire NOC specifications.")
+            ]
+            for e_type, e_title, e_gps, e_dist, e_gps_v, e_cv, e_status, e_notes in default_evidence:
+                db.add(InfrastructureEvidence(
+                    application_id=seeded_app.id,
+                    evidence_type=e_type,
+                    title=e_title,
+                    file_path=None,
+                    file_url=None,
+                    extracted_gps=e_gps,
+                    distance_from_campus_meters=e_dist,
+                    gps_verified=e_gps_v,
+                    cv_detected_objects=e_cv,
+                    compliance_status=e_status,
+                    inspection_notes=e_notes,
+                    uploaded_at=datetime.utcnow()
+                ))
+            db.commit()
+
     db.close()
-    print("Seed complete: Supabase database cleanly populated with exactly 1 realistic example application (APP-2026-0001).")
+    print("Seed complete: Supabase database cleanly populated with AICTE Master Record, Authority Verifications, and Infrastructure Evidence for APP-2026-0001.")
 
 
 if __name__ == "__main__":

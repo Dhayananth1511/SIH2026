@@ -91,6 +91,7 @@ class Institution(Base):
 
     users = relationship("User", back_populates="institution", foreign_keys="User.institution_id")
     applications = relationship("Application", back_populates="institution", foreign_keys="Application.institution_id")
+    aicte_master_record = relationship("AicteMasterRecord", back_populates="institution", uselist=False, cascade="all, delete-orphan")
 
 
 class Application(Base):
@@ -153,6 +154,9 @@ class Application(Base):
     validation_runs = relationship("ValidationRun", back_populates="application", cascade="all, delete-orphan")
     review_actions = relationship("ReviewAction", back_populates="application", cascade="all, delete-orphan")
     decision_record = relationship("DecisionRecord", back_populates="application", uselist=False, cascade="all, delete-orphan")
+    authority_verifications = relationship("AuthorityVerification", back_populates="application", cascade="all, delete-orphan")
+    infrastructure_evidence = relationship("InfrastructureEvidence", back_populates="application", cascade="all, delete-orphan")
+
 
 
 class Document(Base):
@@ -331,3 +335,76 @@ class AuditEvent(Base):
     timestamp = Column(DateTime, default=datetime.utcnow)
 
     application = relationship("Application", back_populates="audit_events")
+
+
+class AicteMasterRecord(Base):
+    """
+    Authorized AICTE Central Repository Records for an Institution.
+    Enables zero repeated manual checking by pre-validating against AICTE's institutional master data.
+    """
+    __tablename__ = "aicte_master_records"
+    id = Column(Integer, primary_key=True, index=True)
+    institution_id = Column(Integer, ForeignKey("institutions.id"), unique=True)
+    aicte_id = Column(String(50), unique=True, index=True, nullable=False)
+    institution_name = Column(String, nullable=False)
+    ter_payment = Column(JSON, nullable=True) # {receipt_no, amount, payment_date, bank_ref, status}
+    previous_eoa = Column(JSON, nullable=True) # list of past approvals: [{year, status, order_number, date}]
+    approved_programmes = Column(JSON, nullable=True) # [{program, course, sanctioned_intake}]
+    total_sanctioned_intake = Column(Integer, default=360)
+    accreditation_details = Column(JSON, nullable=True) # {nba, naac_grade, naac_cgpa, valid_till}
+    faculty_epf_roster = Column(JSON, nullable=True) # {total_faculty, sfr_ratio, cadre_ratio, epf_compliance}
+    past_deficiencies = Column(JSON, nullable=True) # list of past SSC/SAC committee deficiencies
+    registered_campus_acres = Column(Float, default=5.0)
+    registered_gps = Column(JSON, nullable=True) # {latitude, longitude, address}
+    last_synced_at = Column(DateTime, default=datetime.utcnow)
+
+    institution = relationship("Institution", back_populates="aicte_master_record")
+
+
+class AuthorityVerification(Base):
+    """
+    Official Issuing Authority Verification Record.
+    Implements the statutory 6-state taxonomy:
+    VERIFIED, MISMATCH_DETECTED, EXPIRED, VERIFICATION_PENDING, SOURCE_UNAVAILABLE, MANUAL_REVIEW_REQUIRED.
+    """
+    __tablename__ = "authority_verifications"
+    id = Column(Integer, primary_key=True, index=True)
+    application_id = Column(Integer, ForeignKey("applications.id"))
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
+    authority_name = Column(String(150), nullable=False) # DigiLocker, State Fire Dept, Revenue Cadastre, University
+    verification_type = Column(String(50), default="API_PORTAL") # API_PORTAL, QR_CODE, DIGITAL_SIGNATURE_DSC, URN_LOOKUP
+    status = Column(String(50), default="VERIFICATION_PENDING") # VERIFIED, MISMATCH_DETECTED, EXPIRED, VERIFICATION_PENDING, SOURCE_UNAVAILABLE, MANUAL_REVIEW_REQUIRED
+    urn_or_token = Column(String(150), nullable=True)
+    source_url = Column(String(255), nullable=True)
+    source_agency = Column(String(150), nullable=True)
+    checked_at = Column(DateTime, default=datetime.utcnow)
+    response_payload = Column(JSON, nullable=True)
+    discrepancy_details = Column(Text, nullable=True)
+    is_conclusive = Column(Boolean, default=True)
+
+    application = relationship("Application", back_populates="authority_verifications")
+    document = relationship("Document")
+
+
+class InfrastructureEvidence(Base):
+    """
+    Infrastructure Evidence & Computer Vision Compliance Record.
+    Validates geo-tagged campus photos and architectural floor plans against APH norms.
+    """
+    __tablename__ = "infrastructure_evidence"
+    id = Column(Integer, primary_key=True, index=True)
+    application_id = Column(Integer, ForeignKey("applications.id"))
+    evidence_type = Column(String(100), nullable=False) # PHOTO_COMPUTER_CENTER, PHOTO_LIBRARY, PHOTO_BARRIER_FREE_RAMP, PHOTO_FIRE_SAFETY, FLOOR_PLAN_PWD
+    title = Column(String(200), nullable=False)
+    file_path = Column(String(255), nullable=True)
+    file_url = Column(String(255), nullable=True)
+    extracted_gps = Column(JSON, nullable=True) # {latitude, longitude, altitude}
+    distance_from_campus_meters = Column(Float, nullable=True)
+    gps_verified = Column(Boolean, default=True)
+    cv_detected_objects = Column(JSON, nullable=True) # [{label: "Computer Terminals", count: 45, confidence: 0.96}]
+    compliance_status = Column(String(50), default="COMPLIANT_ADVISORY") # COMPLIANT_ADVISORY, DEFICIENCY_FLAGGED, PHYSICAL_INSPECTION_RECOMMENDED
+    inspection_notes = Column(Text, nullable=True)
+    uploaded_at = Column(DateTime, default=datetime.utcnow)
+
+    application = relationship("Application", back_populates="infrastructure_evidence")
+

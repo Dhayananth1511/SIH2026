@@ -10,7 +10,12 @@ import type {
   User,
   Institution,
   RegulatoryRule,
-  Notification
+  Notification,
+  AicteMasterRecord,
+  AuthorityVerification,
+  InfrastructureEvidence,
+  CategoryChecklistItem,
+  OfficialScrutinySheet
 } from './types';
 
 export const formatApiUrl = (raw: string | undefined | null): string | null => {
@@ -468,3 +473,65 @@ export const officerApproveApplication = async (
 export const getApplicationCertificate = async (appId: string): Promise<any> => {
   return cachedGet(`/applications/${appId}/certificate`);
 };
+
+// ============================================================================
+// SIH 26261 Statutory Regulations & Verification APIs
+// ============================================================================
+export const getCategoryChecklists = async (): Promise<Record<string, CategoryChecklistItem[]>> => {
+  return cachedGet<Record<string, CategoryChecklistItem[]>>('/regulatory/category-checklists');
+};
+
+export const getAicteMasterRecord = async (appId: string): Promise<AicteMasterRecord> => {
+  return cachedGet<AicteMasterRecord>(`/applications/${appId}/aicte-master-record`);
+};
+
+export const getExternalVerifications = async (appId: string): Promise<AuthorityVerification[]> => {
+  return cachedGet<AuthorityVerification[]>(`/applications/${appId}/external-verifications`);
+};
+
+export const triggerExternalVerification = async (
+  appId: string,
+  payload: {
+    authority_name: string;
+    verification_type?: string;
+    status: string;
+    urn_or_token?: string;
+    source_url?: string;
+    source_agency?: string;
+    response_payload?: Record<string, any>;
+    discrepancy_details?: string;
+  }
+): Promise<AuthorityVerification> => {
+  clearClientCache();
+  const res = await api.post<AuthorityVerification>(`/applications/${appId}/verify-external-source`, payload);
+  return res.data;
+};
+
+export const getInfrastructureEvidence = async (appId: string): Promise<InfrastructureEvidence[]> => {
+  return cachedGet<InfrastructureEvidence[]>(`/applications/${appId}/infrastructure-evidence`);
+};
+
+export const addInfrastructureEvidence = async (
+  appId: string,
+  payload: {
+    evidence_type: string;
+    title: string;
+    file_path?: string;
+    file_url?: string;
+    extracted_gps?: { latitude: number; longitude: number; altitude?: number };
+    distance_from_campus_meters?: number;
+    gps_verified?: boolean;
+    cv_detected_objects?: Array<{ label: string; count: number; confidence: number }>;
+    compliance_status?: string;
+    inspection_notes?: string;
+  }
+): Promise<InfrastructureEvidence> => {
+  clearClientCache();
+  const res = await api.post<InfrastructureEvidence>(`/applications/${appId}/infrastructure-evidence`, payload);
+  return res.data;
+};
+
+export const getOfficialScrutinySheet = async (appId: string): Promise<OfficialScrutinySheet> => {
+  return cachedGet<OfficialScrutinySheet>(`/applications/${appId}/official-scrutiny-sheet`);
+};
+

@@ -305,3 +305,153 @@ export interface AuthResponse {
   role: string;
   institution_id?: number;
 }
+
+export interface AicteMasterRecord {
+  id: number;
+  institution_id?: number;
+  aicte_id: string;
+  institution_name: string;
+  ter_payment?: {
+    receipt_no: string;
+    amount: string;
+    payment_date: string;
+    bank_ref: string;
+    status: string;
+  };
+  previous_eoa?: Array<{
+    year: string;
+    status: string;
+    order_number: string;
+    date: string;
+  }>;
+  approved_programmes?: Array<{
+    program: string;
+    course: string;
+    sanctioned_intake: number;
+  }>;
+  total_sanctioned_intake?: number;
+  accreditation_details?: {
+    nba?: string;
+    naac?: string;
+    valid_till?: string;
+  };
+  faculty_epf_roster?: {
+    total_faculty: number;
+    cadre_ratio: string;
+    sfr_ratio: string;
+    epf_registered_count: number;
+  };
+  past_deficiencies?: Array<{
+    year: string;
+    committee: string;
+    finding: string;
+    status: string;
+  }>;
+  registered_campus_acres?: number;
+  registered_gps?: {
+    latitude: number;
+    longitude: number;
+    address: string;
+  };
+  last_synced_at?: string;
+}
+
+export interface AuthorityVerification {
+  id: number;
+  application_id: number;
+  document_id?: number;
+  authority_name: string;
+  verification_type: 'API_PORTAL' | 'QR_CODE' | 'DIGITAL_SIGNATURE_DSC' | 'URN_LOOKUP' | string;
+  status: 'VERIFIED' | 'MISMATCH_DETECTED' | 'EXPIRED' | 'VERIFICATION_PENDING' | 'SOURCE_UNAVAILABLE' | 'MANUAL_REVIEW_REQUIRED' | string;
+  urn_or_token?: string;
+  source_url?: string;
+  source_agency?: string;
+  checked_at: string;
+  response_payload?: Record<string, any>;
+  discrepancy_details?: string;
+  is_conclusive: boolean;
+}
+
+export interface InfrastructureEvidence {
+  id: number;
+  application_id: number;
+  evidence_type: string;
+  title: string;
+  file_path?: string;
+  file_url?: string;
+  extracted_gps?: {
+    latitude: number;
+    longitude: number;
+    altitude?: number;
+  };
+  distance_from_campus_meters?: number;
+  gps_verified: boolean;
+  cv_detected_objects?: Array<{
+    label: string;
+    count: number;
+    confidence: number;
+  }>;
+  compliance_status: 'COMPLIANT_ADVISORY' | 'DEFICIENCY_FLAGGED' | 'PHYSICAL_INSPECTION_RECOMMENDED' | string;
+  inspection_notes?: string;
+  uploaded_at: string;
+}
+
+export interface CategoryChecklistItem {
+  doc_type: string;
+  category: string;
+  rule_id: string;
+  required_value: string;
+  description: string;
+  is_mandatory: boolean;
+  issuing_authority?: string;
+  verification_mechanism?: string;
+}
+
+export interface OfficialScrutinySheet {
+  form_id: string;
+  form_title: string;
+  council: string;
+  ministry: string;
+  generated_at: string;
+  cryptographic_seal: string;
+  application: {
+    application_id: string;
+    institution_name: string;
+    category: string;
+    academic_year: string;
+    region: string;
+    state: string;
+    city: string;
+    applied_for: string;
+    scrutiny_score: number;
+    status: string;
+    certificate_issued?: boolean;
+    certificate_number?: string;
+  };
+  master_record: {
+    aicte_id: string;
+    ter_payment: {
+      receipt_no: string;
+      amount?: string;
+      status: string;
+    };
+    sanctioned_intake: number;
+    previous_eoa_status: string;
+  };
+  documents_count: number;
+  open_findings_count: number;
+  compliance_checks_count: number;
+  authority_verifications: Array<{
+    authority: string;
+    type: string;
+    status: string;
+    token?: string;
+  }>;
+  infrastructure_evidence: Array<{
+    title: string;
+    gps_verified: boolean;
+    compliance_status: string;
+  }>;
+  statutory_safeguards: string;
+}
+

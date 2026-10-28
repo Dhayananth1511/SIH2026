@@ -469,3 +469,101 @@ class RegulatoryRuleUpdate(BaseModel):
     is_mandatory: Optional[bool] = None
     is_active: Optional[bool] = None
     version: Optional[str] = None
+
+
+# ---- AICTE Master Institutional Record (AIMR) Schemas ----
+class AicteMasterRecordOut(BaseModel):
+    id: int
+    institution_id: Optional[int]
+    aicte_id: str
+    institution_name: str
+    ter_payment: Optional[Dict[str, Any]] = None
+    previous_eoa: Optional[List[Dict[str, Any]]] = None
+    approved_programmes: Optional[List[Dict[str, Any]]] = None
+    total_sanctioned_intake: Optional[int] = 360
+    accreditation_details: Optional[Dict[str, Any]] = None
+    faculty_epf_roster: Optional[Dict[str, Any]] = None
+    past_deficiencies: Optional[List[Dict[str, Any]]] = None
+    registered_campus_acres: Optional[float] = 5.0
+    registered_gps: Optional[Dict[str, Any]] = None
+    last_synced_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ---- Issuing Authority Verification Schemas ----
+class AuthorityVerificationOut(BaseModel):
+    id: int
+    application_id: int
+    document_id: Optional[int] = None
+    authority_name: str
+    verification_type: str
+    status: str
+    urn_or_token: Optional[str] = None
+    source_url: Optional[str] = None
+    source_agency: Optional[str] = None
+    checked_at: datetime
+    response_payload: Optional[Dict[str, Any]] = None
+    discrepancy_details: Optional[str] = None
+    is_conclusive: bool = True
+
+    class Config:
+        from_attributes = True
+
+
+class AuthorityVerificationCreate(BaseModel):
+    authority_name: str
+    verification_type: str = "API_PORTAL"
+    status: str = "VERIFIED"
+    urn_or_token: Optional[str] = None
+    source_url: Optional[str] = None
+    source_agency: Optional[str] = None
+    response_payload: Optional[Dict[str, Any]] = None
+    discrepancy_details: Optional[str] = None
+
+
+# ---- Infrastructure Evidence Schemas ----
+class InfrastructureEvidenceOut(BaseModel):
+    id: int
+    application_id: int
+    evidence_type: str
+    title: str
+    file_path: Optional[str] = None
+    file_url: Optional[str] = None
+    extracted_gps: Optional[Dict[str, Any]] = None
+    distance_from_campus_meters: Optional[float] = None
+    gps_verified: bool = True
+    cv_detected_objects: Optional[List[Dict[str, Any]]] = None
+    compliance_status: str = "COMPLIANT_ADVISORY"
+    inspection_notes: Optional[str] = None
+    uploaded_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class InfrastructureEvidenceCreate(BaseModel):
+    evidence_type: str
+    title: str
+    file_path: Optional[str] = None
+    file_url: Optional[str] = None
+    extracted_gps: Optional[Dict[str, Any]] = None
+    distance_from_campus_meters: Optional[float] = None
+    gps_verified: Optional[bool] = True
+    cv_detected_objects: Optional[List[Dict[str, Any]]] = None
+    compliance_status: Optional[str] = "COMPLIANT_ADVISORY"
+    inspection_notes: Optional[str] = None
+
+
+# ---- Dynamic Category Checklist Item Schema ----
+class CategoryChecklistItem(BaseModel):
+    doc_type: str
+    category: str
+    rule_id: str
+    required_value: str
+    description: str
+    is_mandatory: bool = True
+    issuing_authority: Optional[str] = None
+    verification_mechanism: Optional[str] = None
+
