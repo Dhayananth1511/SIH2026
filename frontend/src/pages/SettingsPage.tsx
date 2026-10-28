@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../AuthContext';
-import { getAdminUsers, updateUserRole, getRegulatoryRules, createRegulatoryRule, updateRegulatoryRule } from '../api';
+import { api, getAdminUsers, updateUserRole, getRegulatoryRules, createRegulatoryRule, updateRegulatoryRule } from '../api';
 import type { User, RegulatoryRule, UserRole } from '../types';
 
 export default function SettingsPage() {
@@ -55,7 +55,7 @@ export default function SettingsPage() {
   };
 
   const refreshDbInfo = () => {
-    axios.get('http://localhost:8000/system/db-info')
+    api.get('/system/db-info')
       .then(r => setDbInfo(r.data))
       .catch(() => setDbInfo({
         status: 'online',
@@ -113,7 +113,7 @@ export default function SettingsPage() {
     setResetting(true);
     setResetStatus(null);
     try {
-      await axios.post('http://localhost:8000/system/reset-db?wipe_users=false');
+      await api.post('/system/reset-db?wipe_users=false');
       setResetStatus('Applications and findings reset successfully! Demo users preserved.');
       refreshDbInfo();
     } catch (err: any) {

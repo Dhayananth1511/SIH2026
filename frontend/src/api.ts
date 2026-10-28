@@ -14,14 +14,22 @@ import type {
 } from './types';
 
 const getBaseUrl = () => {
+  let url = import.meta.env.VITE_API_URL as string | undefined;
+  if (url && url.trim() !== '') {
+    url = url.trim().replace(/\/+$/, '');
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = `https://${url}`;
+    }
+    return url;
+  }
   if (typeof window !== 'undefined' && window.location && window.location.hostname) {
     return `http://${window.location.hostname}:8000`;
   }
   return 'http://127.0.0.1:8000';
 };
 
-const BASE = getBaseUrl();
-const api = axios.create({ baseURL: BASE, timeout: 15000 });
+export const BASE = getBaseUrl();
+export const api = axios.create({ baseURL: BASE, timeout: 15000 });
 
 api.interceptors.request.use(config => {
   const token = localStorage.getItem('token');

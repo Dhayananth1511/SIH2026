@@ -38,14 +38,55 @@ app = FastAPI(
     description="Streamlined AICTE Validation & Regulatory Review Platform"
 )
 
+# Parse CORS origins
+raw_origins = settings.CORS_ORIGINS
+if isinstance(raw_origins, str):
+    if raw_origins.strip() == "*":
+        allowed_origins = []
+        origin_regex = r"^https?://.*"
+    else:
+        allowed_origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
+        origin_regex = r"^https?://(localhost|127\.0\.0\.1|.*\.onrender\.com)(:[0-9]+)?$"
+else:
+    allowed_origins = [o for o in raw_origins if o != "*"]
+    origin_regex = r"^https?://(localhost|127\.0\.0\.1|.*\.onrender\.com)(:[0-9]+)?$"
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
+    allow_origins=allowed_origins,
+    allow_origin_regex=origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+def on_startup():
+    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+    try:
+        from app.database import SessionLocal
+        from app.seed import seed
+        db = SessionLocal()
+        try:
+            if db.query(User).count() == 0:
+                print("No users found in database. Initializing seed data...")
+                seed()
+                print("Database auto-seeded successfully!")
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"Notice during startup seed check: {e}")
+
+
+@app.get("/health", tags=["System"])
+def health_check():
+    return {
+        "status": "healthy",
+        "app": settings.APP_NAME,
+        "version": settings.VERSION,
+        "timestamp": datetime.utcnow().isoformat()
+    }
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
@@ -258,49 +299,36 @@ def get_dashboard_stats(db: Session = Depends(get_db), current_user: User = Depe
 
     base_query = db.query(Application)
     if is_inst:
-        # Enforce strict data isolation: only this institution's applications
         base_query = base_query.filter(Application.submitted_by == current_user.id)
 
-    total_apps = base_query.count()
+    all_apps = base_query.all()
+    total_apps = len(all_apps)
 
-    # Calculate exact counts requested in Section 4
-    draft_count = db.query(Application).filter(
-        (Application.submitted_by == current_user.id) if is_inst else True,
-        or_(Application.status == "DRAFT", Application.status == "draft")
-    ).count()
+    draft_count = 0
+    action_required_count = 0
+    ready_for_review_count = 0
+    under_review_count = 0
+    decision_recorded_count = 0
+    total_score = 0.0
+    inst_app_ids = []
 
-    action_required_count = db.query(Application).filter(
-        (Application.submitted_by == current_user.id) if is_inst else True,
-        or_(Application.status == "ACTION_REQUIRED", Application.status == "deficiency")
-    ).count()
+    for a in all_apps:
+        inst_app_ids.append(a.id)
+        s = (a.status or "").upper()
+        if s in ("DRAFT",):
+            draft_count += 1
+        elif s in ("ACTION_REQUIRED", "DEFICIENCY"):
+            action_required_count += 1
+        elif s in ("READY_FOR_REVIEW",):
+            ready_for_review_count += 1
+        elif s in ("UNDER_SCRUTINY", "UNDER_COMPLIANCE_REVIEW", "UNDER_REVIEW", "DOC_VERIFIED", "COMPLIANCE_REVIEW", "DECISION_PENDING", "UNDER_OFFICER_REVIEW"):
+            under_review_count += 1
+        elif s in ("DECISION_RECORDED", "CLEARED", "REJECTED", "APPROVED"):
+            decision_recorded_count += 1
+        total_score += (a.scrutiny_score or 0)
 
-    ready_for_review_count = db.query(Application).filter(
-        (Application.submitted_by == current_user.id) if is_inst else True,
-        Application.status == "READY_FOR_REVIEW"
-    ).count()
+    avg_score = round(total_score / total_apps, 1) if total_apps > 0 else 0.0
 
-    under_review_count = db.query(Application).filter(
-        (Application.submitted_by == current_user.id) if is_inst else True,
-        or_(
-            Application.status == "UNDER_SCRUTINY",
-            Application.status == "UNDER_COMPLIANCE_REVIEW",
-            Application.status == "under_review",
-            Application.status == "doc_verified",
-            Application.status == "compliance_review",
-            Application.status == "decision_pending"
-        )
-    ).count()
-
-    decision_recorded_count = db.query(Application).filter(
-        (Application.submitted_by == current_user.id) if is_inst else True,
-        or_(
-            Application.status == "DECISION_RECORDED",
-            Application.status == "cleared",
-            Application.status == "rejected"
-        )
-    ).count()
-
-    # Institution Profile Summary for Dashboard
     inst_profile_data = None
     inst = db.query(Institution).filter(Institution.id == current_user.institution_id).first() if current_user.institution_id else db.query(Institution).first()
     if inst:
@@ -314,12 +342,16 @@ def get_dashboard_stats(db: Session = Depends(get_db), current_user: User = Depe
             "campus_acres": inst.campus_acres
         }
 
-    # Additional metrics for summary compatibility
-    inst_app_ids = [a.id for a in base_query.all()]
-    total_docs = db.query(Document).filter(Document.application_id.in_(inst_app_ids)).count() if inst_app_ids else 0
-    total_findings = db.query(Finding).filter(Finding.application_id.in_(inst_app_ids)).count() if inst_app_ids else 0
-    open_findings = db.query(Finding).filter(Finding.application_id.in_(inst_app_ids), Finding.status == "open").count() if inst_app_ids else 0
-    avg_score = round(float(db.query(func.avg(Application.scrutiny_score)).filter(Application.id.in_(inst_app_ids)).scalar() or 0), 1) if inst_app_ids else 0.0
+    total_docs = 0
+    total_findings = 0
+    open_findings = 0
+    if inst_app_ids:
+        total_docs = db.query(func.count(Document.id)).filter(Document.application_id.in_(inst_app_ids)).scalar() or 0
+        finding_rows = db.query(Finding.status, func.count(Finding.id)).filter(Finding.application_id.in_(inst_app_ids)).group_by(Finding.status).all()
+        for f_stat, f_cnt in finding_rows:
+            total_findings += f_cnt
+            if f_stat == "open":
+                open_findings += f_cnt
 
     return DashboardStats(
         institution_profile=inst_profile_data,
