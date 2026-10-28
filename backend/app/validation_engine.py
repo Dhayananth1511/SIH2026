@@ -299,10 +299,15 @@ def extract_document_text(file_path: str) -> Dict[str, Any]:
         if area_match:
             extracted["fields"]["land_area"] = area_match.group(0)
 
-        # FDR amount
-        fdr_match = re.search(r"(?:₹|rs\.?|inr)\s*([0-9,]+(?:\.[0-9]+)?\s*(?:lakhs?|crores?|lacs?)?)", full_text, re.IGNORECASE)
-        if fdr_match:
-            extracted["fields"]["fdr_amount"] = fdr_match.group(0)
+        # Check 5: QR Code and X.509 Digital Signature Forensic Extraction
+        try:
+            from app.document_forensics import extract_qr_codes_from_pdf, extract_digital_signatures_from_pdf
+            extracted["qr_codes"] = extract_qr_codes_from_pdf(file_path)
+            extracted["digital_signatures"] = extract_digital_signatures_from_pdf(file_path)
+        except Exception as e_forensic:
+            extracted["qr_codes"] = []
+            extracted["digital_signatures"] = []
+            extracted["forensic_error"] = str(e_forensic)
 
     except Exception as e:
         extracted["is_readable"] = False

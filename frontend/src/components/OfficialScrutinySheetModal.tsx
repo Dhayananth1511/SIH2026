@@ -14,7 +14,8 @@ import {
   Lock,
   Layers,
   Camera,
-  Server
+  Server,
+  Download
 } from 'lucide-react';
 import { getOfficialScrutinySheet } from '../api';
 import type { OfficialScrutinySheet } from '../types';
@@ -27,6 +28,8 @@ interface Props {
 export default function OfficialScrutinySheetModal({ appId, onClose }: Props) {
   const [data, setData] = useState<OfficialScrutinySheet | null>(null);
   const [loading, setLoading] = useState(true);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [sealStatus, setSealStatus] = useState<{ verified: boolean; text?: string; checking: boolean } | null>(null);
 
   useEffect(() => {
     loadData();
@@ -41,6 +44,49 @@ export default function OfficialScrutinySheetModal({ appId, onClose }: Props) {
       console.error('Failed to load official scrutiny sheet', e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    setDownloadingPdf(true);
+    try {
+      const token = localStorage.getItem('access_token');
+      const response = await fetch(`/api/applications/${appId}/official-scrutiny-sheet/pdf`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      if (!response.ok) throw new Error('PDF export failed');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `AICTE_SCRUTINY_2026_${appId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to generate official PDF');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
+  const handleVerifySeal = async () => {
+    if (!data?.cryptographic_seal) return;
+    setSealStatus({ verified: false, checking: true });
+    try {
+      const res = await fetch(`/api/regulatory/verify-seal/${data.cryptographic_seal}`);
+      if (res.ok) {
+        const val = await res.json();
+        setSealStatus({ verified: true, text: `AUTHENTIC & SEALED: Verified by AICTE National Registry (${val.verified_at})`, checking: false });
+      } else {
+        setSealStatus({ verified: false, text: 'Seal Verification Inconclusive', checking: false });
+      }
+    } catch {
+      setSealStatus({ verified: false, text: 'Verification Network Error', checking: false });
     }
   };
 
@@ -123,6 +169,27 @@ export default function OfficialScrutinySheetModal({ appId, onClose }: Props) {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <button
+              onClick={handleDownloadPdf}
+              disabled={downloadingPdf}
+              className="gov-button"
+              style={{
+                background: '#15803d',
+                color: '#ffffff',
+                padding: '7px 16px',
+                fontSize: '12px',
+                fontWeight: '700',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                borderRadius: '6px',
+                cursor: downloadingPdf ? 'not-allowed' : 'pointer',
+                border: 'none',
+                opacity: downloadingPdf ? 0.7 : 1
+              }}
+            >
+              <Download size={15} /> {downloadingPdf ? 'Exporting PDF...' : 'Download Official PDF (Signed)'}
+            </button>
+            <button
               onClick={handlePrint}
               className="gov-button"
               style={{
@@ -139,7 +206,7 @@ export default function OfficialScrutinySheetModal({ appId, onClose }: Props) {
                 border: 'none'
               }}
             >
-              <Printer size={15} /> Print / Save Scrutiny Dossier (PDF)
+              <Printer size={15} /> Print View
             </button>
             <button
               onClick={onClose}
@@ -416,15 +483,50 @@ export default function OfficialScrutinySheetModal({ appId, onClose }: Props) {
             }}
           >
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
                 <QrCode size={40} style={{ color: '#0f172a' }} />
                 <div>
-                  <div style={{ fontSize: '9.5px', color: '#64748b', textTransform: 'uppercase', fontWeight: '800' }}>
-                    SHA-256 Cryptographic Audit Seal
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ fontSize: '9.5px', color: '#64748b', textTransform: 'uppercase', fontWeight: '800' }}>
+                      SHA-256 Cryptographic Audit Seal
+                    </div>
+                    <button
+                      onClick={handleVerifySeal}
+                      disabled={sealStatus?.checking}
+                      className="no-print"
+                      style={{
+                        background: '#0f172a',
+                        color: '#38bdf8',
+                        border: '1px solid #1e293b',
+                        borderRadius: '4px',
+                        padding: '2px 8px',
+                        fontSize: '9px',
+                        fontWeight: '700',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {sealStatus?.checking ? 'Checking...' : '&#10004; Verify Authenticity'}
+                    </button>
                   </div>
                   <div style={{ fontSize: '10px', fontFamily: 'monospace', color: '#0f172a', wordBreak: 'break-all', maxWidth: '340px' }}>
                     {data.cryptographic_seal}
                   </div>
+                  {sealStatus?.text && (
+                    <div
+                      style={{
+                        marginTop: '4px',
+                        fontSize: '9.5px',
+                        fontWeight: '700',
+                        color: sealStatus.verified ? '#15803d' : '#b91c1c',
+                        background: sealStatus.verified ? '#dcfce7' : '#fee2e2',
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        display: 'inline-block'
+                      }}
+                    >
+                      {sealStatus.text}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

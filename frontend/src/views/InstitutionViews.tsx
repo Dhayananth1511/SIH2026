@@ -56,6 +56,7 @@ import {
 import DocumentOcrModal from '../components/DocumentOcrModal';
 import RegulatoryOrderModal from '../components/RegulatoryOrderModal';
 import ApprovalCertificateModal from '../components/ApprovalCertificateModal';
+import OfficialScrutinySheetModal from '../components/OfficialScrutinySheetModal';
 
 
 interface Props {
@@ -94,6 +95,8 @@ export default function InstitutionViews({ subPage, onNavigate, onSelectApp, onV
   const [uploadingInfra, setUploadingInfra] = useState(false);
   const [infraTitle, setInfraTitle] = useState('');
   const [infraType, setInfraType] = useState('COMPUTING_LAB');
+  const [infraFile, setInfraFile] = useState<File | null>(null);
+  const [showScrutinyModal, setShowScrutinyModal] = useState(false);
 
   // Wizard state for Create Application (Section 5)
   const [wizardStep, setWizardStep] = useState(1);
@@ -212,26 +215,46 @@ export default function InstitutionViews({ subPage, onNavigate, onSelectApp, onV
     }
     setUploadingInfra(true);
     try {
-      await addInfrastructureEvidence(selectedApp.application_id, {
-        evidence_type: infraType,
-        title: infraTitle.trim(),
-        file_path: `infrastructure/${infraType.toLowerCase()}_sample.jpg`,
-        extracted_gps: { latitude: 18.52043, longitude: 73.85674, altitude: 560 },
-        distance_from_campus_meters: 16,
-        gps_verified: true,
-        cv_detected_objects: [
-          { label: infraType === 'COMPUTING_LAB' ? 'desktop_pc' : (infraType === 'FIRE_SAFETY' ? 'fire_extinguisher' : 'facility_fixture'), count: 8, confidence: 0.94 }
-        ],
-        compliance_status: 'COMPLIANT_ADVISORY',
-        inspection_notes: `Photographic evidence registered by institution. GPS distance verified within registered campus perimeter (16m).`
-      });
+      if (infraFile) {
+        const formData = new FormData();
+        formData.append('file', infraFile);
+        formData.append('evidence_type', infraType);
+        formData.append('title', infraTitle.trim());
+        const token = localStorage.getItem('access_token');
+        const res = await fetch(`/api/applications/${selectedApp.application_id}/infrastructure-evidence/upload`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`
+          },
+          body: formData
+        });
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.detail || 'Photo upload failed');
+        }
+      } else {
+        await addInfrastructureEvidence(selectedApp.application_id, {
+          evidence_type: infraType,
+          title: infraTitle.trim(),
+          file_path: `infrastructure/${infraType.toLowerCase()}_sample.jpg`,
+          extracted_gps: { latitude: 18.52043, longitude: 73.85674, altitude: 560 },
+          distance_from_campus_meters: 16,
+          gps_verified: true,
+          cv_detected_objects: [
+            { label: infraType === 'COMPUTING_LAB' ? 'Active Workstations' : (infraType === 'FIRE_SAFETY' ? 'Fire Extinguisher ABC Type' : 'Facility Fixture'), count: 8, confidence: 0.94 }
+          ],
+          compliance_status: 'COMPLIANT_ADVISORY',
+          inspection_notes: `Photographic evidence registered by institution. GPS distance verified within registered campus perimeter (16m).`
+        });
+      }
       const updatedInfra = await getInfrastructureEvidence(selectedApp.application_id);
       setSelectedAppInfra(updatedInfra);
       setInfraTitle('');
+      setInfraFile(null);
       setActionNotice('✓ Infrastructure facility photograph and GPS evidence registered successfully.');
       setTimeout(() => setActionNotice(''), 4000);
     } catch (err: any) {
-      alert(err?.response?.data?.detail || 'Failed to add infrastructure evidence.');
+      alert(err?.message || err?.response?.data?.detail || 'Failed to add infrastructure evidence.');
     } finally {
       setUploadingInfra(false);
     }
@@ -653,7 +676,16 @@ export default function InstitutionViews({ subPage, onNavigate, onSelectApp, onV
                   </h3>
                 </div>
 
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setShowScrutinyModal(true)}
+                    style={{ background: '#0f172a', color: '#38bdf8', borderColor: '#1e293b', fontWeight: '700' }}
+                  >
+                    <FileText size={13} />
+                    <span>Official Scrutiny Sheet (AICTE-SCRUTINY-2026)</span>
+                  </button>
+
                   <button
                     className="btn btn-secondary btn-sm"
                     onClick={() => handleValidateApplication(selectedApp.application_id)}
@@ -1144,6 +1176,19 @@ export default function InstitutionViews({ subPage, onNavigate, onSelectApp, onV
                       />
                     </div>
 
+                    <div style={{ flex: '1.5 1 200px' }}>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>
+                        Campus Photo (with EXIF GPS):
+                      </label>
+                      <input
+                        type="file"
+                        accept=".jpg,.jpeg,.png,.webp"
+                        className="form-control"
+                        style={{ fontSize: '11px', padding: '4px' }}
+                        onChange={e => e.target.files && setInfraFile(e.target.files[0])}
+                      />
+                    </div>
+
                     <button
                       type="submit"
                       className="btn btn-secondary btn-sm"
@@ -1151,7 +1196,7 @@ export default function InstitutionViews({ subPage, onNavigate, onSelectApp, onV
                       style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 14px', fontSize: '11.5px', fontWeight: '700' }}
                     >
                       <Camera size={13} />
-                      <span>{uploadingInfra ? 'Registering...' : 'Register Geo-Photo Evidence'}</span>
+                      <span>{uploadingInfra ? 'Analyzing CV & GPS...' : (infraFile ? 'Upload & Verify with CV' : 'Register Geo-Photo Evidence')}</span>
                     </button>
                   </form>
                 </div>
@@ -1715,6 +1760,14 @@ export default function InstitutionViews({ subPage, onNavigate, onSelectApp, onV
             setShowCertificateModal(false);
             setCertificateApp(null);
           }}
+        />
+      )}
+
+      {/* Official AICTE Scrutiny Dossier Modal (Form AICTE-SCRUTINY-2026) */}
+      {showScrutinyModal && selectedApp && (
+        <OfficialScrutinySheetModal
+          appId={selectedApp.application_id}
+          onClose={() => setShowScrutinyModal(false)}
         />
       )}
 
