@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { IndianEmblem } from './Emblems';
-import { RefreshCw, Play, Shield, Building2, CheckCircle, AlertTriangle, XCircle, FileText } from 'lucide-react';
+import { RefreshCw, Play, Shield, Building2, CheckCircle, AlertTriangle, XCircle, FileText, Sparkles } from 'lucide-react';
 import { Application } from '../types';
+import GeminiConfigModal from './GeminiConfigModal';
 
 interface Props {
   applications: Application[];
@@ -22,6 +23,8 @@ export default function PrototypeHeader({
   onRefresh,
   activeFeature
 }: Props) {
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+
   const getStatusBadge = (status?: string) => {
     const s = (status || '').toLowerCase();
     if (s === 'cleared') {
@@ -219,8 +222,35 @@ export default function PrototypeHeader({
             <RefreshCw size={13} className={isValidating ? 'spin' : ''} />
             <span>Sync</span>
           </button>
+
+          <button
+            onClick={() => setIsAiModalOpen(true)}
+            className="btn btn-sm"
+            style={{
+              background: 'rgba(56, 189, 248, 0.15)',
+              border: '1px solid #38bdf8',
+              color: '#38bdf8',
+              padding: '8px 12px',
+              borderRadius: '6px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '12px',
+              cursor: 'pointer'
+            }}
+            title="Configure Gemini LLM & Multi-Agent Engine"
+          >
+            <Sparkles size={13} color="#38bdf8" />
+            <span>🤖 Gemini AI Agents</span>
+          </button>
         </div>
       </div>
+
+      <GeminiConfigModal
+        isOpen={isAiModalOpen}
+        onClose={() => setIsAiModalOpen(false)}
+      />
     </header>
   );
 }
+

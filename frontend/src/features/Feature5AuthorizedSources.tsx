@@ -189,7 +189,7 @@ export default function Feature5AuthorizedSources({
               FEATURE 5 OF 8
             </span>
             <h2 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', margin: 0 }}>
-              Demonstrate Document Verification Using Authorized Sources
+              Authorized Source Verification Gateway
             </h2>
           </div>
           <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0 0' }}>

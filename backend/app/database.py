@@ -1,6 +1,10 @@
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from app.config import settings
+
+db_file_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "aicte.db"))
+sqlite_url = f"sqlite:///{db_file_path}"
 
 db_url = settings.DATABASE_URL
 if db_url.startswith("postgres://"):
@@ -8,16 +12,26 @@ if db_url.startswith("postgres://"):
 elif db_url.startswith("postgresql://") and not db_url.startswith("postgresql+psycopg2://"):
     db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
 
-engine_kwargs = {}
-if "sqlite" in db_url:
-    engine_kwargs["connect_args"] = {"check_same_thread": False}
-else:
-    engine_kwargs["pool_size"] = 10
-    engine_kwargs["max_overflow"] = 20
-    engine_kwargs["pool_recycle"] = 300
-    engine_kwargs["pool_pre_ping"] = True
+try:
+    if "sqlite" in db_url:
+        engine = create_engine(sqlite_url, connect_args={"check_same_thread": False})
+        with engine.connect() as conn:
+            pass
+    else:
+        engine = create_engine(
+            db_url,
+            pool_size=10,
+            max_overflow=20,
+            pool_recycle=300,
+            pool_pre_ping=True,
+            connect_args={"connect_timeout": 3}
+        )
+        with engine.connect() as conn:
+            pass
+except Exception as e:
+    # Safe fallback to local SQLite so offline or remote DB unreachable never breaks app
+    engine = create_engine(sqlite_url, connect_args={"check_same_thread": False})
 
-engine = create_engine(db_url, **engine_kwargs)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 

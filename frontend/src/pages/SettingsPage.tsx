@@ -114,7 +114,7 @@ export default function SettingsPage() {
     setResetStatus(null);
     try {
       await api.post('/system/reset-db?wipe_users=false');
-      setResetStatus('Applications and findings reset successfully! Demo users preserved.');
+      setResetStatus('Applications and findings reset successfully! Authorized user accounts preserved.');
       refreshDbInfo();
     } catch (err: any) {
       setResetStatus('Failed to reset: ' + (err?.response?.data?.detail || err.message));

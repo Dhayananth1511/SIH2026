@@ -74,9 +74,12 @@ export default function ApplicationDetailPage({ appId = '', onBack, onNavigateTa
     setValidating(true);
     try {
       const res = await runValidation(appId);
-      setStatusNotice(`✓ 5-Agent Validation Pipeline finished: ${res.message || 'Scrutiny pipeline completed'}`);
+      const aiTag = res.multi_agent_pipeline?.gemini_live 
+        ? `[Gemini 2.5 Flash Live AI - 5 Agents]` 
+        : `[5-Agent Framework - Rule Fallback]`;
+      setStatusNotice(`✓ ${aiTag} finished: ${res.summary || 'Scrutiny pipeline completed'}`);
       loadData();
-      setTimeout(() => setStatusNotice(''), 4000);
+      setTimeout(() => setStatusNotice(''), 6000);
     } catch (e: any) {
       alert(e?.response?.data?.detail || 'Validation run triggered');
     } finally {

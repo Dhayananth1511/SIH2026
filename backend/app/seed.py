@@ -94,6 +94,13 @@ def seed():
             "role": UserRole.OFFICER.value,
             "pass": "arun",
             "inst_id": None
+        },
+        {
+            "email": "arun@college.edu.in",
+            "full_name": "ABC Institute of Technology (Principal)",
+            "role": UserRole.INSTITUTION.value,
+            "pass": "arun",
+            "inst_id": inst1.id
         }
     ]
 
@@ -188,7 +195,7 @@ def seed():
     print("4. Seeding EXACTLY ONE Example Application (APP-2026-0001)...")
 
     # ------------------------------------------------------------
-    # APP-2026-0001: READY_FOR_REVIEW (Single clean realistic example in Supabase)
+    # APP-2026-0001: Clean DRAFT Application Ready for Real Document Upload
     # ------------------------------------------------------------
     app1 = db.query(Application).filter(Application.application_id == "APP-2026-0001").first()
     if not app1:
@@ -203,76 +210,17 @@ def seed():
             state="Maharashtra",
             city="Pune",
             applied_for="Annual Extension of Approval (EoA) 2026-27 for B.Tech & M.Tech Programs",
-            status=AppStatus.READY_FOR_REVIEW.value,
-            current_stage="ready_for_review",
-            scrutiny_score=100.0,
-            submitted_by=None,
-            submitted_at=datetime.utcnow() - timedelta(days=1),
-            updated_at=datetime.utcnow() - timedelta(hours=2),
+            status=AppStatus.DRAFT.value,
+            current_stage="submission",
+            scrutiny_score=0.0,
+            submitted_by=user_map["arun@college.edu.in"].id,
+            submitted_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
             ai_suggestions=[]
         )
         db.add(app1)
         db.commit()
         db.refresh(app1)
-
-        docs_specs = [
-            ("Land Ownership Title Deed", "Land_Ownership_Title_Deed.pdf", {"land_acres": "5.5 Acres Contiguous", "ownership": "Freehold / Registered Deed No. 4021"}),
-            ("Fire Safety NOC Certificate", "Fire_Safety_NOC_Certificate.pdf", {"expiry_date": "2027-05-30", "clearance": "Valid Unconditional NOC"}),
-            ("Building Approved Plan & Structural Stability", "Building_Approved_Plan_and_Stability.pdf", {"built_up_area": "18,500 sq.m", "status": "Approved Master Plan"}),
-            ("Faculty Cadre & SFR Registry", "Faculty_Cadre_and_SFR_Registry.pdf", {"faculty_count": 72, "sfr": "1:18.5 Compliant"}),
-            ("Endowment Joint FDR Receipt", "Endowment_Joint_FDR_Receipt.pdf", {"fdr_amount": "₹50,00,000", "bank": "State Bank of India Joint AICTE"})
-        ]
-        for dt, fn, ed in docs_specs:
-            d = Document(
-                application_id=app1.id,
-                doc_type=dt,
-                filename=fn,
-                file_path=f"./storage/uploads/APP-2026-0001/{fn}",
-                file_size=420000,
-                sha256_hash=file_sha256(fn),
-                version=1,
-                is_latest=True,
-                status="valid",
-                verification_result="Verified against AICTE Approval Process Handbook (APH 2026-27).",
-                extracted_data={"institution_name": "ABC Institute of Engineering & Technology", **ed},
-                uploaded_at=datetime.utcnow() - timedelta(days=1),
-                uploaded_by=None
-            )
-            db.add(d)
-
-        # Statutory Compliance Checks (100% PASS)
-        for r_id, r_name, req_val, cat in [
-            ("APH-2.1", "Infrastructure & Land Area", "5.0 Acres Contiguous", "Land & Infrastructure"),
-            ("APH-3.4", "Faculty Cadre & SFR Ratio", "1:20 SFR required", "Human Resources"),
-            ("APH-4.2", "Fire & Life Safety Clearance", "Valid Permanent/Renewed NOC", "Statutory Safety"),
-            ("APH-5.1", "Approved Building & Structural Plan", "Approved Master Plan", "Infrastructure"),
-            ("APH-6.3", "Endowment & Financial FDR", "FDR ₹50 Lakhs", "Finance")
-        ]:
-            chk = ComplianceCheck(
-                application_id=app1.id,
-                rule_id=r_id,
-                rule_name=r_name,
-                category=cat,
-                result="PASS",
-                details="Statutory clearance verified against official AICTE APH 2026-27 requirements.",
-                evidence_value="Compliant & Document Verified",
-                required_value=req_val,
-                rule_version="APH-2026.1",
-                checked_at=datetime.utcnow() - timedelta(hours=2)
-            )
-            db.add(chk)
-
-        notif1 = Notification(
-            user_id=officer_user.id,
-            application_id=app1.id,
-            title="AI Validation Cleared: Ready for Officer Approval",
-            message="All mandatory AICTE document checks for Application #APP-2026-0001 have passed with 100% score. Dossier submitted to AICTE Approval Officer.",
-            type="STATUS_CHANGE",
-            is_read=False,
-            created_at=datetime.utcnow() - timedelta(hours=2)
-        )
-        db.add(notif1)
-        db.commit()
 
     # 5. Seed AICTE Master Record for ABC Institute
     master_rec = db.query(AicteMasterRecord).filter(AicteMasterRecord.institution_id == inst1.id).first()
@@ -319,58 +267,6 @@ def seed():
         )
         db.add(master_rec)
         db.commit()
-
-    # 6. Seed Issuing Authority Verifications for APP-2026-0001
-    seeded_app = db.query(Application).filter(Application.application_id == "APP-2026-0001").first()
-    if seeded_app:
-        if db.query(AuthorityVerification).filter(AuthorityVerification.application_id == seeded_app.id).count() == 0:
-            auth_specs = [
-                ("State Directorate of Fire Prevention Services", "API_PORTAL", "VERIFIED", "MAH-FIRE-2026-88192", "https://fire.maharashtra.gov.in/verify", "State Fire Prevention Services Department", {"clearance_type": "Permanent Academic NOC", "expiry": "2027-05-30"}),
-                ("State Land Revenue Cadastre / Bhulekh", "QR_CODE", "VERIFIED", "KL-SURVEY-4021/B", "https://bhulekh.maharashtra.gov.in/cadastre", "Department of Land Records & Settlement", {"land_title": "Clear / Non-Encumbered", "contiguous_acres": 5.50}),
-                ("Municipal Corporation Town Planning / PWD", "URN_LOOKUP", "VERIFIED", "PWD-PUNE-STAB-9921", "https://pmc.gov.in/townplanning/verify", "Public Works Department", {"structural_stability": "Certified A-Grade", "seismic_zone": "Zone III Compliant"}),
-                ("Affiliating State Technical University", "API_PORTAL", "VERIFIED", "UNIV-SPPU-AFF-2026-04", "https://unipune.ac.in/affiliation/check", "Academic Affiliation Section", {"status": "Active Permanent Affiliation", "approved_courses": 4}),
-                ("National DigiLocker Academic Depository", "API_PORTAL", "VERIFIED", "DIGI-CERT-88129", "https://digilocker.gov.in/api/verify", "Ministry of Electronics and IT (MeitY)", {"doc_type": "Institutional Land & FDR Records", "integrity": "Cryptographically Sealed"})
-            ]
-            for a_name, v_type, a_stat, u_tok, s_url, s_agency, resp in auth_specs:
-                db.add(AuthorityVerification(
-                    application_id=seeded_app.id,
-                    authority_name=a_name,
-                    verification_type=v_type,
-                    status=a_stat,
-                    urn_or_token=u_tok,
-                    source_url=s_url,
-                    source_agency=s_agency,
-                    checked_at=datetime.utcnow(),
-                    response_payload=resp,
-                    discrepancy_details=None,
-                    is_conclusive=True
-                ))
-            db.commit()
-
-        # 7. Seed Infrastructure Evidence
-        if db.query(InfrastructureEvidence).filter(InfrastructureEvidence.application_id == seeded_app.id).count() == 0:
-            default_evidence = [
-                ("PHOTO_COMPUTER_CENTER", "Central Computing Facility & AI Lab", {"latitude": 18.5206, "longitude": 73.8569, "altitude": 560}, 25.0, True, [{"label": "Active Workstations", "count": 64, "confidence": 0.98}, {"label": "UPS Power Grid", "count": 2, "confidence": 0.95}], "COMPLIANT_ADVISORY", "Instructional terminal count meets APH Clause 5.3 norms for 360 intake."),
-                ("PHOTO_LIBRARY", "Central Library & Digital Reading Hall", {"latitude": 18.5202, "longitude": 73.8565, "altitude": 562}, 30.0, True, [{"label": "Reading Desks", "count": 120, "confidence": 0.97}, {"label": "Stack Racks", "count": 24, "confidence": 0.99}], "COMPLIANT_ADVISORY", "Carpet area and seating capacity verified compliant with Chapter II."),
-                ("PHOTO_BARRIER_FREE_RAMP", "Barrier-Free Access Ramp & Braille Lift", {"latitude": 18.5205, "longitude": 73.8568, "altitude": 560}, 15.0, True, [{"label": "Wheelchair Ramp Gradient 1:12", "count": 1, "confidence": 0.94}, {"label": "Accessible Handrails", "count": 2, "confidence": 0.96}], "COMPLIANT_ADVISORY", "Rights of Persons with Disabilities Act & AICTE barrier-free norms satisfied."),
-                ("PHOTO_FIRE_SAFETY", "Active Fire Hydrant & Sprinkler Assembly", {"latitude": 18.5208, "longitude": 73.8571, "altitude": 561}, 45.0, True, [{"label": "Fire Extinguisher ABC Type", "count": 4, "confidence": 0.99}, {"label": "Hydrant Valve Assembly", "count": 1, "confidence": 0.95}], "COMPLIANT_ADVISORY", "Operational fire suppression system installed per State Fire NOC specifications.")
-            ]
-            for e_type, e_title, e_gps, e_dist, e_gps_v, e_cv, e_status, e_notes in default_evidence:
-                db.add(InfrastructureEvidence(
-                    application_id=seeded_app.id,
-                    evidence_type=e_type,
-                    title=e_title,
-                    file_path=None,
-                    file_url=None,
-                    extracted_gps=e_gps,
-                    distance_from_campus_meters=e_dist,
-                    gps_verified=e_gps_v,
-                    cv_detected_objects=e_cv,
-                    compliance_status=e_status,
-                    inspection_notes=e_notes,
-                    uploaded_at=datetime.utcnow()
-                ))
-            db.commit()
 
     db.close()
     print("Seed complete: Supabase database cleanly populated with AICTE Master Record, Authority Verifications, and Infrastructure Evidence for APP-2026-0001.")

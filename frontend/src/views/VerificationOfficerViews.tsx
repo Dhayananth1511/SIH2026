@@ -22,7 +22,14 @@ interface Props {
 export default function VerificationOfficerViews({ subPage, onNavigate, onSelectApp, onViewDoc }: Props) {
   const [apps, setApps] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
+  const [selectedAppId, setSelectedAppId] = useState<string | null>(() => {
+    const p = window.location.pathname;
+    if (p.includes('/officer/')) {
+      const parts = p.split('/officer/');
+      return parts[1]?.replace('/', '') || 'APP-2026-0001';
+    }
+    return null;
+  });
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {

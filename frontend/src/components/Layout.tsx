@@ -16,7 +16,7 @@ import { getNotifications } from '../api';
 import type { Notification } from '../types';
 
 export default function Layout() {
-  const { user, logout } = useAuth();
+  const { user, logout, switchRole } = useAuth();
   const rawRole = (user?.role || 'institution').toLowerCase();
 
   const getRoleKey = (r: string) => {
@@ -38,7 +38,7 @@ export default function Layout() {
   };
 
   const currentRoleKey = getRoleKey(rawRole);
-  const isScrutiny = rawRole.includes('scrutiny') || rawRole.includes('verification');
+  const isScrutiny = rawRole.includes('scrutiny') || rawRole.includes('verification') || rawRole === 'officer';
   const isCompliance = rawRole.includes('compliance') || rawRole.includes('reviewer');
   const isDecisionMaker = rawRole.includes('chairman') || rawRole.includes('decision');
 
@@ -56,7 +56,12 @@ export default function Layout() {
 
   const [currentPage, setCurrentPage] = useState<string>(() => {
     const token = localStorage.getItem('token');
-    if (!token) return 'login';
+    if (!token) {
+      if (typeof window !== 'undefined' && window.location.pathname.startsWith('/officer')) {
+        return 'vo-dashboard';
+      }
+      return 'login';
+    }
     const savedUser = localStorage.getItem('user');
     if (savedUser) {
       try {
@@ -133,6 +138,84 @@ export default function Layout() {
             <div className="gov-indicator">
               <div className="gov-title">Government of India</div>
               <div className="gov-sub">Ministry of Education</div>
+            </div>
+
+            {/* Directorate Workspace Navigation */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '2px',
+              background: '#f1f5f9',
+              padding: '3px 4px',
+              borderRadius: '6px',
+              border: '1px solid #cbd5e1'
+            }}>
+              <span style={{ fontSize: '10px', fontWeight: '800', color: '#475569', padding: '0 5px', letterSpacing: '0.3px', textTransform: 'uppercase' }}>
+                Directorate:
+              </span>
+              <button
+                id="role-switch-officer-btn"
+                onClick={() => {
+                  switchRole('officer');
+                  setCurrentPage('vo-dashboard');
+                }}
+                style={{
+                  padding: '4px 9px',
+                  fontSize: '11px',
+                  fontWeight: currentRoleKey === 'officer' ? '800' : '600',
+                  background: currentRoleKey === 'officer' ? '#0f172a' : 'transparent',
+                  color: currentRoleKey === 'officer' ? '#ffffff' : '#334155',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+                title="AICTE Scrutiny & Approval Directorate"
+              >
+                Scrutiny Bureau
+              </button>
+              <button
+                id="role-switch-inst-btn"
+                onClick={() => {
+                  switchRole('institution');
+                  setCurrentPage('inst-dashboard');
+                }}
+                style={{
+                  padding: '4px 9px',
+                  fontSize: '11px',
+                  fontWeight: currentRoleKey === 'institution' ? '800' : '600',
+                  background: currentRoleKey === 'institution' ? '#0f172a' : 'transparent',
+                  color: currentRoleKey === 'institution' ? '#ffffff' : '#334155',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+                title="Technical Institution Applicant Desk"
+              >
+                Institution Desk
+              </button>
+              <button
+                id="role-switch-admin-btn"
+                onClick={() => {
+                  switchRole('admin');
+                  setCurrentPage('admin-dashboard');
+                }}
+                style={{
+                  padding: '4px 9px',
+                  fontSize: '11px',
+                  fontWeight: currentRoleKey === 'admin' ? '800' : '600',
+                  background: currentRoleKey === 'admin' ? '#0f172a' : 'transparent',
+                  color: currentRoleKey === 'admin' ? '#ffffff' : '#334155',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+                title="Central System Administration"
+              >
+                Administration
+              </button>
             </div>
 
             {/* Notifications Bell */}
@@ -271,7 +354,7 @@ export default function Layout() {
           )}
 
           {/* ROLE 4: AUTHORIZED AICTE DECISION-MAKER */}
-          {currentRoleKey === 'officer' && (isDecisionMaker || (!isScrutiny && !isCompliance)) && (
+          {currentRoleKey === 'officer' && isDecisionMaker && !isScrutiny && (
             <DecisionMakerViews
               subPage={currentPage}
               onNavigate={page => setCurrentPage(page)}

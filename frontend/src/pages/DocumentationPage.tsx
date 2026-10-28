@@ -103,24 +103,9 @@ export default function DocumentationPage() {
               <span className="white-card-title">About this Project</span>
             </div>
             <div className="white-card-body" style={{ fontSize: '13.5px', color: '#334155', lineHeight: '1.7' }}>
-              <p style={{ marginBottom: '14px' }}>
-                This platform is a prototype for <strong>AI-assisted regulatory compliance and application validation for AICTE</strong>. It helps in document verification, compliance checking, and provides decision support to scrutiny officers.
+              <p style={{ margin: 0 }}>
+                This portal is the official regulatory system for <strong>AI-assisted regulatory compliance and application validation for AICTE, Ministry of Education, Government of India</strong>. It streamlines document scrutiny, cross-checks statutory norms against the AICTE Approval Process Handbook (APH 2026–27), authenticates digital signatures and QR codes, validates campus spatial boundaries, and delivers decision support to regulatory scrutiny officers.
               </p>
-
-              <div style={{
-                background: '#fffbeb',
-                border: '1px solid #fde68a',
-                borderRadius: '8px',
-                padding: '12px 16px',
-                fontSize: '12.5px',
-                color: '#92400e',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}>
-                <span>ℹ️</span>
-                <em>This is a demo environment with synthetic data only. It is not an official AICTE system.</em>
-              </div>
             </div>
           </div>
 

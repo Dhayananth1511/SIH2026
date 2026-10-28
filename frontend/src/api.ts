@@ -257,10 +257,20 @@ export const getDocumentDownloadUrl = (docId: number | string): string => {
   return `${getActiveApiUrl()}/documents/${docId}/download`;
 };
 
-// AI Validation Middleware (Check 1 to 7)
+// AI Validation Middleware & Multi-Agent Orchestration
 export const runValidation = async (appId: string): Promise<any> => {
   clearClientCache();
   const res = await api.post(`/applications/${appId}/validate`);
+  return res.data;
+};
+
+export const getAiStatus = async (): Promise<any> => {
+  const res = await api.get('/ai/status');
+  return res.data;
+};
+
+export const configureGeminiKey = async (apiKey: string): Promise<any> => {
+  const res = await api.post('/ai/configure-key', { gemini_api_key: apiKey });
   return res.data;
 };
 
@@ -475,7 +485,7 @@ export const getApplicationCertificate = async (appId: string): Promise<any> => 
 };
 
 // ============================================================================
-// SIH 26261 Statutory Regulations & Verification APIs
+// Statutory Regulations & Verification APIs
 // ============================================================================
 export const getCategoryChecklists = async (): Promise<Record<string, CategoryChecklistItem[]>> => {
   return cachedGet<Record<string, CategoryChecklistItem[]>>('/regulatory/category-checklists');
@@ -533,5 +543,30 @@ export const addInfrastructureEvidence = async (
 
 export const getOfficialScrutinySheet = async (appId: string): Promise<OfficialScrutinySheet> => {
   return cachedGet<OfficialScrutinySheet>(`/applications/${appId}/official-scrutiny-sheet`);
+};
+
+export const uploadInfrastructurePhoto = async (
+  appId: string,
+  evidenceType: string,
+  title: string,
+  file: File,
+  gpsLat?: number,
+  gpsLng?: number
+): Promise<InfrastructureEvidence> => {
+  clearClientCache();
+  const form = new FormData();
+  form.append('evidence_type', evidenceType);
+  form.append('title', title);
+  form.append('file', file);
+  if (gpsLat !== undefined) form.append('gps_latitude', String(gpsLat));
+  if (gpsLng !== undefined) form.append('gps_longitude', String(gpsLng));
+  const res = await api.post<InfrastructureEvidence>(`/applications/${appId}/infrastructure-evidence/upload`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  });
+  return res.data;
+};
+
+export const verifyCryptographicSeal = async (hashSeal: string): Promise<any> => {
+  return cachedGet<any>(`/regulatory/verify-seal/${hashSeal}`);
 };
 

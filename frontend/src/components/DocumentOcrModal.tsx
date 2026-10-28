@@ -15,7 +15,8 @@ import {
   Building2,
   ExternalLink,
   Layers,
-  Search
+  Search,
+  QrCode
 } from 'lucide-react';
 import type { Document, Finding } from '../types';
 
@@ -43,7 +44,7 @@ export default function DocumentOcrModal({
   const [zoomLevel, setZoomLevel] = useState(100);
   const [currentPage, setCurrentPage] = useState(1);
   const [highlightOcr, setHighlightOcr] = useState(true);
-  const [activeTab, setActiveTab] = useState<'ocr' | 'findings' | 'integrity'>('ocr');
+  const [activeTab, setActiveTab] = useState<'ocr' | 'findings' | 'integrity' | 'security'>('ocr');
   const [officerNotes, setOfficerNotes] = useState('');
   const [anomalyVerified, setAnomalyVerified] = useState(false);
 
@@ -445,6 +446,28 @@ export default function DocumentOcrModal({
               >
                 Integrity &amp; Hash
               </button>
+
+              <button
+                onClick={() => setActiveTab('security')}
+                style={{
+                  flex: 1,
+                  padding: '12px 14px',
+                  background: activeTab === 'security' ? '#ffffff' : 'transparent',
+                  border: 'none',
+                  borderBottom: activeTab === 'security' ? '2px solid #1e3a8a' : 'none',
+                  fontSize: '12px',
+                  fontWeight: activeTab === 'security' ? '700' : '500',
+                  color: activeTab === 'security' ? '#1e3a8a' : '#64748b',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '4px'
+                }}
+              >
+                <QrCode size={13} />
+                <span>QR &amp; DSC ({((extractedData.qr_codes || []).length + (extractedData.digital_signatures || []).length)})</span>
+              </button>
             </div>
 
             {/* Tab 1: OCR Fields */}
@@ -637,6 +660,87 @@ export default function DocumentOcrModal({
                       {new Date(document.uploaded_at).toLocaleString('en-IN')}
                     </div>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Tab 4: QR & Digital Signatures (DSC) */}
+            {activeTab === 'security' && (
+              <div style={{ padding: '20px', flex: 1, overflowY: 'auto' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: '800', color: '#0f172a' }}>
+                    Statutory QR Code &amp; X.509 DSC Extraction
+                  </div>
+                  <span style={{ fontSize: '10.5px', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' }}>
+                    IT Act 2000 Compliant
+                  </span>
+                </div>
+
+                {/* Section A: QR Codes */}
+                <div style={{ marginBottom: '18px' }}>
+                  <div style={{ fontSize: '11.5px', fontWeight: '700', textTransform: 'uppercase', color: '#475569', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <QrCode size={14} color="#7c3aed" />
+                    <span>Embedded QR Codes Detected ({extractedData.qr_codes?.length || 0})</span>
+                  </div>
+
+                  {(!extractedData.qr_codes || extractedData.qr_codes.length === 0) ? (
+                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '11.5px', color: '#64748b' }}>
+                      No visual or embedded QR codes detected on pages of this document.
+                    </div>
+                  ) : (
+                    extractedData.qr_codes.map((qr: any, idx: number) => (
+                      <div key={idx} style={{ padding: '10px 12px', background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '6px', marginBottom: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: '700', color: '#6d28d9' }}>Page {qr.page_number} &bull; {qr.detection_source}</span>
+                          <span style={{ fontSize: '10px', fontWeight: '800', padding: '2px 6px', borderRadius: '3px', background: qr.is_gov_authorized ? '#ecfdf5' : '#fffbeb', color: qr.is_gov_authorized ? '#047857' : '#b45309' }}>
+                            {qr.statutory_status}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '11.5px', color: '#334155', wordBreak: 'break-all', fontFamily: 'monospace' }}>
+                          {qr.payload}
+                        </div>
+                        {qr.domain && (
+                          <div style={{ fontSize: '11px', color: qr.is_gov_authorized ? '#047857' : '#64748b', marginTop: '4px', fontWeight: '600' }}>
+                            {qr.is_gov_authorized ? '✓ Authorized Government Domain' : 'External Domain'} ({qr.domain})
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Section B: Digital Signatures (DSC) */}
+                <div>
+                  <div style={{ fontSize: '11.5px', fontWeight: '700', textTransform: 'uppercase', color: '#475569', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <ShieldCheck size={14} color="#059669" />
+                    <span>X.509 Digital Signatures (DSC) ({extractedData.digital_signatures?.length || 0})</span>
+                  </div>
+
+                  {(!extractedData.digital_signatures || extractedData.digital_signatures.length === 0) ? (
+                    <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '11.5px', color: '#64748b' }}>
+                      No cryptographic digital signature (/Sig dictionary) detected in this file.
+                    </div>
+                  ) : (
+                    extractedData.digital_signatures.map((sig: any, idx: number) => (
+                      <div key={idx} style={{ padding: '12px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', marginBottom: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '12px', fontWeight: '800', color: '#065f46' }}>{sig.signer_name}</span>
+                          <span style={{ fontSize: '10px', fontWeight: '800', padding: '2px 6px', borderRadius: '3px', background: '#059669', color: '#ffffff' }}>
+                            {sig.status}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#475569', marginTop: '2px' }}>
+                          <strong>Certifying Authority (CA):</strong> {sig.certifying_authority}
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#475569', marginTop: '2px' }}>
+                          <strong>Signing Time:</strong> {sig.signing_time}
+                        </div>
+                        <div style={{ fontSize: '10.5px', color: '#047857', marginTop: '4px' }}>
+                          ✓ {sig.details || 'Cryptographically verified with SHA-256 hash algorithm.'}
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             )}

@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "./storage/uploads"
     MAX_UPLOAD_MB: int = 10
     CORS_ORIGINS: Union[List[str], str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    GEMINI_API_KEY: Optional[str] = None
 
     class Config:
         env_file = ".env"
