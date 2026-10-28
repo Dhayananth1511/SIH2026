@@ -92,12 +92,9 @@ export default function OfficerReviewView({ appId, onBack, onViewDoc }: Props) {
   const loadApplicationData = async () => {
     setLoading(true);
     try {
-      const [appData, docsData] = await Promise.all([
-        getApplication(appId),
-        getDocuments(appId).catch(() => [])
-      ]);
+      const appData = await getApplication(appId);
       setApp(appData);
-      setDocs(docsData);
+      setDocs(appData.documents && appData.documents.length > 0 ? appData.documents : await getDocuments(appId).catch(() => []));
       setDecisionOrderNo(appData.certificate_number || `AICTE/CERT/2026-27/${appData.application_id.replace('APP-', '')}`);
     } catch (err: any) {
       console.error(err);

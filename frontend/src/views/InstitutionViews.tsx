@@ -167,11 +167,15 @@ export default function InstitutionViews({ subPage, onNavigate, onSelectApp, onV
 
   const loadAppDetails = async (appItem: Application) => {
     setSelectedApp(appItem);
-    try {
-      const docsData = await getDocuments(appItem.application_id);
-      setAppDocs(docsData);
-    } catch {
-      setAppDocs([]);
+    if (appItem.documents && appItem.documents.length > 0) {
+      setAppDocs(appItem.documents);
+    } else {
+      try {
+        const docsData = await getDocuments(appItem.application_id);
+        setAppDocs(docsData);
+      } catch {
+        setAppDocs([]);
+      }
     }
   };
 

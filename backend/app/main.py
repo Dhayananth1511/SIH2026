@@ -457,8 +457,11 @@ def create_application(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.INSTITUTION, UserRole.ADMIN))
 ):
-    count = db.query(Application).count() + 1
-    generated_app_id = f"APP-2026-{count:04d}"
+    max_id = db.query(func.max(Application.id)).scalar() or 0
+    generated_app_id = f"APP-2026-{(max_id + 1):04d}"
+    while db.query(Application).filter(Application.application_id == generated_app_id).first():
+        max_id += 1
+        generated_app_id = f"APP-2026-{(max_id + 1):04d}"
 
     inst = db.query(Institution).filter(Institution.id == current_user.institution_id).first() if current_user.institution_id else None
 
