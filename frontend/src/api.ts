@@ -8,8 +8,9 @@ import type {
   AuditEvent,
   DashboardStats,
   User,
+  Institution,
   RegulatoryRule,
-  PipelineInfo
+  Notification
 } from './types';
 
 const getBaseUrl = () => {
@@ -20,7 +21,6 @@ const getBaseUrl = () => {
 };
 
 const BASE = getBaseUrl();
-
 const api = axios.create({ baseURL: BASE, timeout: 15000 });
 
 api.interceptors.request.use(config => {
@@ -45,6 +45,17 @@ export const getMe = async (): Promise<User> => {
   return res.data;
 };
 
+// Institution Profile
+export const getInstitutionProfile = async (): Promise<Institution> => {
+  const res = await api.get<Institution>('/institution/profile');
+  return res.data;
+};
+
+export const updateInstitutionProfile = async (data: Partial<Institution>): Promise<Institution> => {
+  const res = await api.put<Institution>('/institution/profile', data);
+  return res.data;
+};
+
 // Dashboard
 export const getDashboardStats = async (): Promise<DashboardStats> => {
   const res = await api.get<DashboardStats>('/dashboard/stats');
@@ -64,18 +75,24 @@ export const getApplication = async (id: string): Promise<Application> => {
 
 export const createApplication = async (data: {
   institution_name: string;
-  institution_type: string;
-  category: string;
-  region: string;
-  state: string;
-  city: string;
-  applied_for: string;
+  institution_type?: string;
+  category?: string;
+  academic_year?: string;
+  region?: string;
+  state?: string;
+  city?: string;
+  applied_for?: string;
 }): Promise<Application> => {
   const res = await api.post<Application>('/applications', data);
   return res.data;
 };
 
 // Documents
+export const getRequiredDocumentChecklist = async (appId: string): Promise<any[]> => {
+  const res = await api.get<any[]>(`/applications/${appId}/required-documents`);
+  return res.data;
+};
+
 export const getDocuments = async (appId: string): Promise<Document[]> => {
   const res = await api.get<Document[]>(`/applications/${appId}/documents`);
   return res.data;
@@ -91,71 +108,56 @@ export const uploadDocument = async (appId: string, docType: string, file: File)
   return res.data;
 };
 
-export const verifyDocumentItem = async (docId: number | string, status: string, remarks?: string): Promise<Document> => {
-  const res = await api.put<Document>(`/documents/${docId}/verify`, null, {
-    params: { status_update: status, remarks }
-  });
-  return res.data;
+export const getDocumentDownloadUrl = (docId: number | string): string => {
+  return `${BASE}/documents/${docId}/download`;
 };
 
-// Findings
-export const getFindings = async (appId: string): Promise<Finding[]> => {
-  const res = await api.get<Finding[]>(`/applications/${appId}/findings`);
-  return res.data;
-};
-
-export const getAllFindings = async (params?: Record<string, string>): Promise<Finding[]> => {
-  const res = await api.get<Finding[]>('/findings', { params });
-  return res.data;
-};
-
-export const reviewFinding = async (id: number, status: string, remark: string): Promise<Finding> => {
-  const res = await api.put<Finding>(`/findings/${id}/review`, { status, officer_remark: remark });
-  return res.data;
-};
-
-// Compliance & AI Validation
-export const getCompliance = async (appId: string): Promise<ComplianceCheck[]> => {
-  const res = await api.get<ComplianceCheck[]>(`/applications/${appId}/compliance`);
-  return res.data;
-};
-
-export const runValidation = async (appId: string) => {
+// AI Validation Middleware (Check 1 to 7)
+export const runValidation = async (appId: string): Promise<any> => {
   const res = await api.post(`/applications/${appId}/validate`);
   return res.data;
 };
 
-// Pipeline Stages Actions
-export const completeVerification = async (appId: string, remarks: string, status: string = 'verified'): Promise<Application> => {
-  const res = await api.post<Application>(`/applications/${appId}/complete-verification`, {
-    remarks,
-    status
+// Workflow: Submit to Scrutiny Officer
+export const submitToScrutinyOfficer = async (appId: string): Promise<Application> => {
+  const res = await api.post<Application>(`/applications/${appId}/submit-to-officer`);
+  return res.data;
+};
+
+// Officer Review Actions
+export const recordScrutinyAction = async (appId: string, actionType: string, comments: string): Promise<Application> => {
+  const res = await api.post<Application>(`/applications/${appId}/scrutiny-action`, {
+    action_type: actionType,
+    comments
   });
   return res.data;
 };
 
-export const submitComplianceRecommendation = async (
-  appId: string,
-  recommendation: string,
-  remarks: string,
-  inspectionRequired: boolean = false
-): Promise<Application> => {
-  const res = await api.post<Application>(`/applications/${appId}/compliance-recommendation`, {
-    recommendation,
-    remarks,
-    inspection_required: inspectionRequired
+export const recordComplianceAction = async (appId: string, actionType: string, comments: string): Promise<Application> => {
+  const res = await api.post<Application>(`/applications/${appId}/compliance-action`, {
+    action_type: actionType,
+    comments
   });
   return res.data;
 };
 
-export const issueOfficialDecision = async (
+export const submitClarification = async (appId: string, responseText: string, documentId?: number): Promise<Application> => {
+  const res = await api.post<Application>(`/applications/${appId}/submit-clarification`, {
+    response_text: responseText,
+    document_id: documentId
+  });
+  return res.data;
+};
+
+
+export const recordOfficialDecision = async (
   appId: string,
   decision: string,
   reasons: string,
   orderNumber?: string,
   authorityDesignation?: string
 ): Promise<Application> => {
-  const res = await api.post<Application>(`/applications/${appId}/official-decision`, {
+  const res = await api.post<Application>(`/applications/${appId}/record-decision`, {
     decision,
     reasons,
     order_number: orderNumber,
@@ -164,91 +166,144 @@ export const issueOfficialDecision = async (
   return res.data;
 };
 
-export const getApplicationPipeline = async (appId: string): Promise<PipelineInfo> => {
-  const res = await api.get<PipelineInfo>(`/applications/${appId}/pipeline`);
+// Notifications
+export const getNotifications = async (): Promise<Notification[]> => {
+  const res = await api.get<Notification[]>('/notifications');
   return res.data;
 };
 
-// Admin Endpoints
+export const markNotificationRead = async (id: number): Promise<any> => {
+  const res = await api.put(`/notifications/${id}/read`);
+  return res.data;
+};
+
+// Audit Logs
+export const getAuditLogs = async (params?: Record<string, string> | string): Promise<AuditEvent[]> => {
+  const queryParams = typeof params === 'string' ? { app_id: params } : params;
+  const res = await api.get<AuditEvent[]>('/audit', { params: queryParams });
+  return res.data;
+};
+
+// Admin
 export const getAdminUsers = async (): Promise<User[]> => {
   const res = await api.get<User[]>('/admin/users');
   return res.data;
 };
 
-export const updateUserRole = async (userId: number | string, role: string, isActive: boolean = true): Promise<User> => {
-  const res = await api.put<User>(`/admin/users/${userId}/role`, {
-    role,
-    is_active: isActive
-  });
+export const updateAdminUserRole = async (userId: number | string, role: string, isActive?: boolean): Promise<User> => {
+  const res = await api.put<User>(`/admin/users/${Number(userId)}/role`, { role, is_active: isActive });
   return res.data;
 };
 
-export const getRegulatoryRules = async (): Promise<RegulatoryRule[]> => {
+export const getAdminRules = async (): Promise<RegulatoryRule[]> => {
   const res = await api.get<RegulatoryRule[]>('/admin/rules');
   return res.data;
 };
 
-export const createRegulatoryRule = async (rule: Partial<RegulatoryRule>): Promise<RegulatoryRule> => {
-  const res = await api.post<RegulatoryRule>('/admin/rules', rule);
+export const createAdminRule = async (data: Partial<RegulatoryRule>): Promise<RegulatoryRule> => {
+  const res = await api.post<RegulatoryRule>('/admin/rules', data);
   return res.data;
 };
 
-export const updateRegulatoryRule = async (ruleId: string, rule: Partial<RegulatoryRule>): Promise<RegulatoryRule> => {
-  const res = await api.put<RegulatoryRule>(`/admin/rules/${ruleId}`, rule);
+export const updateAdminRule = async (ruleId: string, data: Partial<RegulatoryRule>): Promise<RegulatoryRule> => {
+  const res = await api.put<RegulatoryRule>(`/admin/rules/${ruleId}`, data);
   return res.data;
 };
 
-export const deleteRegulatoryRule = async (ruleId: string): Promise<any> => {
+export const deleteAdminRule = async (ruleId: string): Promise<any> => {
   const res = await api.delete(`/admin/rules/${ruleId}`);
   return res.data;
 };
 
-// Audit
-export const getAuditLog = async (appId?: string): Promise<AuditEvent[]> => {
-  const res = await api.get<AuditEvent[]>('/audit', { params: appId ? { app_id: appId } : {} });
+// ============================================================================
+// Compatibility & Legacy Aliases
+// ============================================================================
+export const getFindings = async (appId: string): Promise<Finding[]> => {
+  const res = await api.get<Finding[]>(`/applications/${appId}/findings`);
   return res.data;
 };
 
-// Interactive Workflow Extensions
-export const updateProfile = async (data: { institution_name?: string; contact_person?: string; phone?: string; address?: string }): Promise<User> => {
-  const res = await api.put<User>('/auth/profile', data);
+export const getCompliance = async (appId: string): Promise<ComplianceCheck[]> => {
+  const res = await api.get<ComplianceCheck[]>(`/applications/${appId}/compliance`);
   return res.data;
 };
 
-export const raiseApplicationDeficiency = async (
+export const getAuditLog = getAuditLogs;
+
+export const reviewFinding = async (findingId: number, status: string, notes?: string): Promise<any> => {
+  const res = await api.put(`/findings/${findingId}/review`, { status, notes });
+  return res.data;
+};
+
+export const updateDocumentOcrField = async (docId: number | string, field: string, value: any, _notes?: string): Promise<any> => {
+  const res = await api.put(`/documents/${Number(docId)}/ocr`, { field, value });
+  return res.data;
+};
+
+export const verifyDocumentItem = async (docId: number | string, status: string, notes?: string): Promise<any> => {
+  const res = await api.put(`/documents/${Number(docId)}/verify`, { status, notes });
+  return res.data;
+};
+
+export const completeVerification = async (appId: string, notes?: string, _status?: string): Promise<any> => {
+  return recordScrutinyAction(appId, 'RECOMMEND_COMPLIANCE', notes || 'Scrutiny verification completed');
+};
+
+export const submitComplianceRecommendation = async (appId: string, rec?: string, notes?: string, _inspectionReq?: any): Promise<any> => {
+  return recordComplianceAction(appId, rec || 'FORWARD_DECISION', notes || 'Compliance review completed');
+};
+
+export const issueOfficialDecision = async (
   appId: string,
-  category: string,
-  findingText: string,
-  severity: string = 'high'
-): Promise<Finding> => {
-  const res = await api.post<Finding>(`/applications/${appId}/raise-deficiency`, {
-    category,
-    finding_text: findingText,
-    severity
+  decision: string,
+  remarks?: string,
+  orderNo?: string,
+  authorityDesignation?: string
+): Promise<any> => {
+  return recordOfficialDecision(appId, decision, remarks || '', orderNo, authorityDesignation);
+};
+
+export const getApplicationPipeline = async (appId: string): Promise<any> => {
+  const res = await api.get(`/applications/${appId}`);
+  return res.data;
+};
+
+export const getRegulatoryRules = getAdminRules;
+export const createRegulatoryRule = createAdminRule;
+export const updateRegulatoryRule = updateAdminRule;
+export const deleteRegulatoryRule = deleteAdminRule;
+export const updateUserRole = updateAdminUserRole;
+
+// ============================================================================
+// Unified Officer Review & Approval APIs
+// ============================================================================
+export const officerSendSuggestions = async (
+  appId: string,
+  suggestions: string,
+  faultDetails?: string
+): Promise<Application> => {
+  const res = await api.post<Application>(`/applications/${appId}/officer-send-suggestions`, {
+    suggestions,
+    fault_details: faultDetails
   });
   return res.data;
 };
 
-export const respondToDeficiency = async (findingId: number, responseText: string): Promise<Finding> => {
-  const res = await api.post<Finding>(`/findings/${findingId}/respond`, {
-    response_text: responseText
+export const officerApproveApplication = async (
+  appId: string,
+  remarks?: string,
+  orderNumber?: string
+): Promise<Application> => {
+  const res = await api.post<Application>(`/applications/${appId}/officer-approve`, {
+    remarks,
+    order_number: orderNumber
   });
   return res.data;
 };
 
-export const updateDocumentOcrField = async (
-  docId: number | string,
-  fieldName: string,
-  fieldValue: string,
-  reason: string
-): Promise<Document> => {
-  const res = await api.put<Document>(`/documents/${docId}/ocr-data`, {
-    field_name: fieldName,
-    field_value: fieldValue,
-    reason
-  });
+export const getApplicationCertificate = async (appId: string): Promise<any> => {
+  const res = await api.get(`/applications/${appId}/certificate`);
   return res.data;
 };
 
-export default api;
 

@@ -18,10 +18,15 @@ env/
 venv/
 ENV/
 env.bak/
-venv.bak/
+.venv/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
 
 # Environment Variables & Secrets
 .env

@@ -55,8 +55,8 @@ export default function LoginPage({ onNavigateToSignUp, onLoginSuccess }: Props)
 
   const demoRoles = [
     {
-      title: '1. Institution User',
-      desc: 'Application submission, doc upload, corrections',
+      title: '1. Institution Portal',
+      desc: 'Submit application, view AI validation status & suggestions, download approved certificate',
       email: 'institution@example.com',
       pass: 'inst123',
       color: '#059669',
@@ -64,35 +64,17 @@ export default function LoginPage({ onNavigateToSignUp, onLoginSuccess }: Props)
       icon: <GraduationCap size={15} strokeWidth={2.2} />
     },
     {
-      title: '2. Verification Officer',
-      desc: 'OCR review, doc integrity, anomaly resolution',
-      email: 'verification@aicte.gov.in',
+      title: '2. AICTE Approval Officer',
+      desc: 'Single officer: AI validation scrutiny, send suggestions if fault found, grant official approval & issue certificate',
+      email: 'officer@aicte.gov.in',
       pass: 'officer123',
       color: '#0284c7',
       bg: '#f0f9ff',
       icon: <FileSearch size={15} strokeWidth={2.2} />
     },
     {
-      title: '3. Compliance Reviewer',
-      desc: 'APH checklist scrutiny, infrastructure audit',
-      email: 'compliance@aicte.gov.in',
-      pass: 'reviewer123',
-      color: '#7c3aed',
-      bg: '#f5f3ff',
-      icon: <Scale size={15} strokeWidth={2.2} />
-    },
-    {
-      title: '4. AICTE Decision-Maker',
-      desc: 'Official decree, order signing, approval/deficiency',
-      email: 'decision@aicte.gov.in',
-      pass: 'decision123',
-      color: '#d97706',
-      bg: '#fffbeb',
-      icon: <Building2 size={15} strokeWidth={2.2} />
-    },
-    {
-      title: '5. System Administrator',
-      desc: 'User accounts, role assignment, rule engine',
+      title: '3. System Administrator',
+      desc: 'Platform governance, AICTE regulatory rule parameters, audit trail oversight',
       email: 'admin@aicte.gov.in',
       pass: 'admin123',
       color: '#475569',

@@ -1,11 +1,11 @@
 import React from 'react';
 import { AuthProvider } from './AuthContext';
-import PrototypeApp from './PrototypeApp';
+import Layout from './components/Layout';
 
 function App() {
   return (
     <AuthProvider>
-      <PrototypeApp />
+      <Layout />
     </AuthProvider>
   );
 }

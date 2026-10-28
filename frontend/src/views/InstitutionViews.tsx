@@ -1,96 +1,127 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../AuthContext';
 import {
-  Building2,
-  ClipboardList,
-  FileEdit,
-  Send,
-  Hourglass,
-  AlertTriangle,
-  CheckCircle2
-} from 'lucide-react';
-import {
   getApplications,
   createApplication,
   getDocuments,
   uploadDocument,
-  getFindings,
-  getCompliance,
+  runValidation,
+  submitToScrutinyOfficer,
   getDashboardStats,
-  getApplicationPipeline,
-  updateProfile,
-  respondToDeficiency,
-  runValidation
+  getInstitutionProfile,
+  updateInstitutionProfile,
+  getNotifications,
+  markNotificationRead,
+  getDocumentDownloadUrl,
+  submitClarification
 } from '../api';
-import type { Application, Document, Finding, ComplianceCheck, DashboardStats, PipelineInfo } from '../types';
+import type {
+  Application,
+  Document,
+  Finding,
+  DashboardStats,
+  Institution,
+  Notification
+} from '../types';
+import {
+  Building2,
+  ClipboardList,
+  Plus,
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  ArrowRight,
+  Upload,
+  RefreshCw,
+  Eye,
+  FileText,
+  FileCheck,
+  Send,
+  ExternalLink,
+  ShieldCheck,
+  Search,
+  Scroll,
+  Award
+} from 'lucide-react';
+import DocumentOcrModal from '../components/DocumentOcrModal';
+import RegulatoryOrderModal from '../components/RegulatoryOrderModal';
+import ApprovalCertificateModal from '../components/ApprovalCertificateModal';
+
 
 interface Props {
   subPage: string;
   onNavigate: (page: string) => void;
   onSelectApp: (appId: string) => void;
-  onViewDoc: (docName: string) => void;
+  onViewDoc?: (docName: string) => void;
 }
+
+const REQUIRED_DOCS_LIST = [
+  { doc_type: "Land Ownership Title Deed", category: "Land & Infrastructure", required_value: "5.0 Acres Contiguous" },
+  { doc_type: "Fire Safety NOC Certificate", category: "Statutory Safety", required_value: "Valid Permanent/Renewed NOC" },
+  { doc_type: "Building Approved Plan & Structural Stability", category: "Infrastructure", required_value: "Approved Master Plan" },
+  { doc_type: "Faculty Cadre & SFR Registry", category: "Human Resources", required_value: "1:20 SFR required" },
+  { doc_type: "Endowment Joint FDR Receipt", category: "Finance", required_value: "Joint FDR ₹50 Lakhs" }
+];
 
 export default function InstitutionViews({ subPage, onNavigate, onSelectApp, onViewDoc }: Props) {
   const { user } = useAuth();
   const [apps, setApps] = useState<Application[]>([]);
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [profile, setProfile] = useState<Institution | null>(null);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [actionNotice, setActionNotice] = useState('');
 
-  // Profile State
-  const [profile, setProfile] = useState({
-    institution_name: 'ABC Institute of Engineering & Technology',
-    institution_id: '1-33245561',
-    institution_type: 'Engineering',
-    category: 'Private-Self-Financed',
-    address: 'Sector 62, Institutional Area, Knowledge Park',
-    state: 'Maharashtra',
-    district: 'Pune',
-    pincode: '411057',
-    contact_person: 'Dr. Ramesh Kulkarni (Principal)',
-    email: 'principal@abcinstitute.edu.in',
-    phone: '+91 98765 43210',
-    university: 'Savitribai Phule Pune University',
-    est_year: '2004',
-    campus_acres: '10.5 Acres (Contiguous)',
-    total_intake: '720 Seats'
-  });
-  const [profileSaved, setProfileSaved] = useState(false);
+  // Selected Application for Deficiency Resolution or Document Upload
+  const [selectedApp, setSelectedApp] = useState<Application | null>(null);
+  const [appDocs, setAppDocs] = useState<Document[]>([]);
+  const [validatingAppId, setValidatingAppId] = useState<string | null>(null);
 
-  // Wizard state for Create Application
+  // Wizard state for Create Application (Section 5)
   const [wizardStep, setWizardStep] = useState(1);
-  const [appForm, setAppForm] = useState({
+  const [wizardForm, setWizardForm] = useState({
+    institution_name: user?.full_name || 'ABC Institute of Engineering & Technology',
+    institution_type: 'Engineering & Technology',
     category: 'Extension of Approval (EoA)',
     academic_year: '2026-27',
-    institution_name: user?.full_name || 'ABC Institute of Engineering & Technology',
-    institution_type: 'Engineering',
     region: 'Western',
     state: 'Maharashtra',
     city: 'Pune',
-    applied_for: 'Continuation of B.Tech CSE, AI&ML, ECE + New Course M.Tech Data Science',
-    faculty_count: '64',
-    total_carpet_area: '18500 sq.m',
-    declaration_accepted: false
+    applied_for: 'Continuation of Technical Courses + Intake Expansion'
   });
-  const [createdSuccessId, setCreatedSuccessId] = useState<string | null>(null);
+  const [wizardCreatedApp, setWizardCreatedApp] = useState<Application | null>(null);
+  const [uploadingDocType, setUploadingDocType] = useState<string | null>(null);
 
-  // Documents state
-  const [selectedAppForDocs, setSelectedAppForDocs] = useState<string>('');
-  const [docsList, setDocsList] = useState<Document[]>([]);
-  const [uploadDocType, setUploadDocType] = useState('Land Ownership Deed');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [uploadSuccess, setUploadSuccess] = useState('');
+  // Replacement file upload state
+  const [replacementFile, setReplacementFile] = useState<File | null>(null);
+  const [replacementDocType, setReplacementDocType] = useState('');
+  const [uploadSuccessMsg, setUploadSuccessMsg] = useState('');
 
-  // Deficiencies state
-  const [deficiencies, setDeficiencies] = useState<Finding[]>([]);
-  const [respondingTo, setRespondingTo] = useState<Finding | null>(null);
-  const [deficiencyResponseText, setDeficiencyResponseText] = useState('');
-  const [deficiencyRespSuccess, setDeficiencyRespSuccess] = useState('');
+  // Modal states for OCR inspection, Regulatory Orders, and Clarifications
+  const [inspectingDoc, setInspectingDoc] = useState<Document | null>(null);
+  const [showOrderModal, setShowOrderModal] = useState(false);
+  const [showCertificateModal, setShowCertificateModal] = useState(false);
+  const [certificateApp, setCertificateApp] = useState<Application | null>(null);
+  const [showClarificationModal, setShowClarificationModal] = useState(false);
+  const [clarificationReplyText, setClarificationReplyText] = useState('');
+  const [submittingClarification, setSubmittingClarification] = useState(false);
 
-  // Timeline state
-  const [timelineData, setTimelineData] = useState<PipelineInfo | null>(null);
+
+  // Profile Edit State
+  const [profileEditForm, setProfileEditForm] = useState({
+    name: '',
+    aicte_id: '',
+    institution_type: '',
+    category: '',
+    state: '',
+    district: '',
+    address: '',
+    contact_person: '',
+    email: '',
+    phone: '',
+    university_affiliation: ''
+  });
+  const [profileSavedMsg, setProfileSavedMsg] = useState('');
 
   useEffect(() => {
     loadData();
@@ -99,442 +130,1042 @@ export default function InstitutionViews({ subPage, onNavigate, onSelectApp, onV
   const loadData = async () => {
     setLoading(true);
     try {
-      const [appsData, statsData] = await Promise.all([
+      const [appsData, statsData, profData, notifsData] = await Promise.all([
         getApplications().catch(() => []),
-        getDashboardStats().catch(() => null)
+        getDashboardStats().catch(() => null),
+        getInstitutionProfile().catch(() => null),
+        getNotifications().catch(() => [])
       ]);
       setApps(appsData);
       setStats(statsData);
+      setProfile(profData);
+      setNotifications(notifsData);
 
-      if (appsData.length > 0) {
-        const firstAppId = appsData[0].application_id || String(appsData[0].id);
-        setSelectedAppForDocs(firstAppId);
-        loadAppDocs(firstAppId);
-        loadFindings(firstAppId);
-        loadTimeline(firstAppId);
+      if (profData) {
+        setProfileEditForm({
+          name: profData.name || '',
+          aicte_id: profData.aicte_id || '',
+          institution_type: profData.institution_type || 'Engineering & Technology',
+          category: profData.category || 'Private-Self-Financed',
+          state: profData.state || 'Maharashtra',
+          district: profData.district || 'Pune',
+          address: profData.address || '',
+          contact_person: profData.contact_person || '',
+          email: profData.email || '',
+          phone: profData.phone || '',
+          university_affiliation: profData.university_affiliation || ''
+        });
+      }
+
+      if (appsData.length > 0 && !selectedApp) {
+        loadAppDetails(appsData[0]);
       }
     } finally {
       setLoading(false);
     }
   };
 
-  const loadAppDocs = async (appId: string) => {
+  const loadAppDetails = async (appItem: Application) => {
+    setSelectedApp(appItem);
     try {
-      const d = await getDocuments(appId);
-      setDocsList(d);
+      const docsData = await getDocuments(appItem.application_id);
+      setAppDocs(docsData);
     } catch {
-      setDocsList([]);
+      setAppDocs([]);
     }
   };
 
-  const loadFindings = async (appId: string) => {
-    try {
-      const f = await getFindings(appId);
-      setDeficiencies(f);
-    } catch {
-      setDeficiencies([]);
-    }
-  };
-
-  const loadTimeline = async (appId: string) => {
-    try {
-      const p = await getApplicationPipeline(appId);
-      setTimelineData(p);
-    } catch {
-      setTimelineData(null);
-    }
-  };
-
-  const handleCreateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const newApp = await createApplication({
-        institution_name: appForm.institution_name,
-        institution_type: appForm.institution_type,
-        category: appForm.category,
-        region: appForm.region,
-        state: appForm.state,
-        city: appForm.city,
-        applied_for: appForm.applied_for
-      });
-      setCreatedSuccessId(newApp.application_id || String(newApp.id));
-      await loadData();
-    } catch (err: any) {
-      alert('Error creating application: ' + (err?.response?.data?.detail || err.message));
-    }
-  };
-
-  const handleUploadSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedAppForDocs || !selectedFile) {
-      alert('Please select an application and a file to upload.');
-      return;
-    }
-    try {
-      await uploadDocument(selectedAppForDocs, uploadDocType, selectedFile);
-      setUploadSuccess(`Successfully uploaded ${uploadDocType} (${selectedFile.name})`);
-      setSelectedFile(null);
-      await loadAppDocs(selectedAppForDocs);
-      setTimeout(() => setUploadSuccess(''), 4000);
-    } catch (err: any) {
-      alert('Upload failed: ' + (err?.response?.data?.detail || err.message));
-    }
-  };
-
-  const [aiRunning, setAiRunning] = useState(false);
-  const [aiResult, setAiResult] = useState<any | null>(null);
-
-  const handleTriggerAiValidation = async (appId: string) => {
-    setAiRunning(true);
+  // Run AI Validation Middleware
+  const handleValidateApplication = async (appId: string) => {
+    setValidatingAppId(appId);
     try {
       const res = await runValidation(appId);
-      setAiResult(res);
+      setActionNotice(`✓ Validation finished: ${res.summary}`);
       await loadData();
-      if (selectedAppForDocs) {
-        await loadAppDocs(selectedAppForDocs);
-        await loadFindings(selectedAppForDocs);
-        await loadTimeline(selectedAppForDocs);
+      if (selectedApp && selectedApp.application_id === appId) {
+        const updated = await getApplications();
+        const currentUpdated = updated.find(a => a.application_id === appId);
+        if (currentUpdated) setSelectedApp(currentUpdated);
       }
-    } catch (err: any) {
-      alert('AI Validation error: ' + (err?.response?.data?.detail || err.message));
+      setTimeout(() => setActionNotice(''), 5000);
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || 'Validation run failed.');
     } finally {
-      setAiRunning(false);
+      setValidatingAppId(null);
     }
   };
 
+  // Submit to AICTE Approval Officer
+  const handleSubmitToOfficer = async (appId: string) => {
+    try {
+      await submitToScrutinyOfficer(appId);
+      setActionNotice('✓ Application submitted successfully to the AICTE Approval Officer.');
+      await loadData();
+      setTimeout(() => setActionNotice(''), 4000);
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || 'Submission to officer failed.');
+    }
+  };
+
+  // Handle Replacement Document Upload
+  const handleUploadReplacement = async (appId: string, docType: string, file: File) => {
+    try {
+      setUploadingDocType(docType);
+      await uploadDocument(appId, docType, file);
+      setUploadSuccessMsg(`✓ Uploaded new version for ${docType}`);
+      const updatedDocs = await getDocuments(appId);
+      setAppDocs(updatedDocs);
+      setTimeout(() => setUploadSuccessMsg(''), 4000);
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || 'Failed to upload document.');
+    } finally {
+      setUploadingDocType(null);
+    }
+  };
+
+  // Wizard Application Creation
+  const handleWizardSubmitStep2 = async () => {
+    try {
+      const created = await createApplication({
+        institution_name: wizardForm.institution_name,
+        institution_type: wizardForm.institution_type,
+        category: wizardForm.category,
+        academic_year: wizardForm.academic_year,
+        region: wizardForm.region,
+        state: wizardForm.state,
+        city: wizardForm.city,
+        applied_for: wizardForm.applied_for
+      });
+      setWizardCreatedApp(created);
+      setWizardStep(3);
+      loadData();
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || 'Failed to create application draft.');
+    }
+  };
+
+  // Profile Save
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await updateProfile({
-        institution_name: profile.institution_name,
-        contact_person: profile.contact_person,
-        phone: profile.phone,
-        address: profile.address
-      });
-      setProfileSaved(true);
-      setTimeout(() => setProfileSaved(false), 3000);
-    } catch (err: any) {
-      alert('Profile update error: ' + (err?.response?.data?.detail || err.message));
+      const updated = await updateInstitutionProfile(profileEditForm);
+      setProfile(updated);
+      setProfileSavedMsg('✓ Institution profile updated successfully.');
+      setTimeout(() => setProfileSavedMsg(''), 4000);
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || 'Failed to update profile.');
     }
   };
 
-  const handleDeficiencySubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!respondingTo) return;
-    try {
-      await respondToDeficiency(respondingTo.id, deficiencyResponseText);
-      setDeficiencyRespSuccess('✓ Deficiency response recorded in audit ledger. Evidence version created and application returned to verification review.');
-      setRespondingTo(null);
-      setDeficiencyResponseText('');
-      await loadData();
-      if (selectedAppForDocs) await loadFindings(selectedAppForDocs);
-      setTimeout(() => setDeficiencyRespSuccess(''), 5000);
-    } catch (err: any) {
-      alert('Deficiency response error: ' + (err?.response?.data?.detail || err.message));
-    }
+  const getNextActionText = (status: string) => {
+    const s = status?.toUpperCase();
+    if (s === 'DRAFT') return 'Upload Documents & Run Validation';
+    if (s === 'ACTION_REQUIRED') return 'Review Suggestions & Rectify Deficiencies';
+    if (s === 'READY_FOR_REVIEW') return 'Submit to AICTE Officer for Approval';
+    if (s === 'UNDER_OFFICER_REVIEW' || s === 'UNDER_SCRUTINY') return 'Awaiting AICTE Officer Approval';
+    if (s === 'APPROVED' || s === 'DECISION_RECORDED') return 'Download AICTE Approval Certificate';
+    if (s === 'CLARIFICATION_REQUESTED') return 'Submit Clarification / Documents';
+    return 'Under Regulatory Review';
   };
 
-  // Filtered applications
-  const filteredApps = apps.filter(a => {
-    const matchSearch =
-      (a.application_id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (a.institution_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (a.category || '').toLowerCase().includes(searchTerm.toLowerCase());
-    if (statusFilter === 'all') return matchSearch;
-    if (statusFilter === 'draft') return matchSearch && a.status === 'draft';
-    if (statusFilter === 'submitted') return matchSearch && a.status === 'submitted';
-    if (statusFilter === 'under_review') return matchSearch && (a.status === 'under_review' || a.status === 'doc_verified' || a.status === 'compliance_review');
-    if (statusFilter === 'deficiency') return matchSearch && a.status === 'deficiency';
-    if (statusFilter === 'cleared') return matchSearch && a.status === 'cleared';
-    return matchSearch;
-  });
-
-  const totalCount = apps.length;
-  const draftCount = apps.filter(a => a.status === 'draft').length;
-  const submittedCount = apps.filter(a => a.status === 'submitted').length;
-  const underReviewCount = apps.filter(a => a.status === 'under_review' || a.status === 'doc_verified' || a.status === 'compliance_review').length;
-  const deficiencyCount = apps.filter(a => a.status === 'deficiency').length;
-  const clearedCount = apps.filter(a => a.status === 'cleared').length;
+  if (loading && apps.length === 0) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>
+        Loading Institution Desk...
+      </div>
+    );
+  }
 
   return (
-    <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '8px 16px' }}>
-      {/* ============================================================
-          1. DASHBOARD
-          ============================================================ */}
+    <div className="animate-in" style={{ maxWidth: '1200px', margin: '0 auto', paddingBottom: '60px' }}>
+      {actionNotice && (
+        <div style={{
+          padding: '10px 16px',
+          background: '#ecfdf5',
+          border: '1px solid #a7f3d0',
+          borderRadius: '6px',
+          color: '#065f46',
+          fontSize: '12.5px',
+          fontWeight: '600',
+          marginBottom: '16px'
+        }}>
+          {actionNotice}
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* 1. INSTITUTION DASHBOARD (Section 4) */}
+      {/* ============================================================ */}
       {(subPage === 'inst-dashboard' || subPage === 'dashboard') && (
         <div>
-          {/* Header */}
-          <div style={{ marginBottom: '24px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
-              <span className="black-logo-badge">
-                <Building2 size={15} />
-              </span>
-              <h1 style={{ fontSize: '20px', fontWeight: '800', color: '#09090b', margin: 0 }}>
-                Institution Dashboard
-              </h1>
-              <span style={{
-                background: '#f1f5f9',
-                color: '#334155',
-                padding: '3px 8px',
-                borderRadius: '12px',
-                fontSize: '11px',
-                fontWeight: '700'
-              }}>
-                ACADEMIC YEAR 2026-27
-              </span>
+          {/* Profile Summary Card */}
+          <div className="gov-card" style={{ marginBottom: '18px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
+              <div>
+                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#1d4ed8', fontWeight: '700' }}>
+                  Institution Profile Summary
+                </div>
+                <h2 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', margin: '4px 0 6px 0' }}>
+                  {profile?.name || user?.full_name || 'ABC Institute of Engineering & Technology'}
+                </h2>
+                <div style={{ fontSize: '12px', color: '#475569', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                  <span><strong>AICTE Permanent ID:</strong> {profile?.aicte_id || '1-33245561'}</span>
+                  <span><strong>Category:</strong> {profile?.category || 'Private-Self-Financed'}</span>
+                  <span><strong>Affiliation:</strong> {profile?.university_affiliation || 'State Technical University'}</span>
+                  <span><strong>Campus:</strong> {profile?.campus_acres || 5.5} Acres Contiguous</span>
+                </div>
+              </div>
+
+              <div>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    setWizardStep(1);
+                    onNavigate('inst-create-app');
+                  }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 16px' }}
+                >
+                  <Plus size={16} strokeWidth={2.5} />
+                  <span>Create Application</span>
+                </button>
+              </div>
             </div>
-            <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
-              Track institutional approval applications, upload mandatory regulatory documents, resolve deficiencies, and monitor AICTE scrutiny milestones.
-            </p>
           </div>
 
-          {/* Metric Summary Cards - Clicking filters table! */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-            gap: '14px',
-            marginBottom: '24px'
-          }}>
-            {[
-              { key: 'all', label: 'Total Applications', count: totalCount, color: '#09090b', bg: '#eff6ff', icon: <ClipboardList size={14} /> },
-              { key: 'draft', label: 'Drafts in Progress', count: draftCount, color: '#64748b', bg: '#f8fafc', icon: <FileEdit size={14} /> },
-              { key: 'submitted', label: 'Submitted (Intake)', count: submittedCount, color: '#0284c7', bg: '#f0f9ff', icon: <Send size={14} /> },
-              { key: 'under_review', label: 'Under Review', count: underReviewCount, color: '#8b5cf6', bg: '#f5f3ff', icon: <Hourglass size={14} /> },
-              { key: 'deficiency', label: 'Correction Required', count: deficiencyCount, color: '#dc2626', bg: '#fef2f2', icon: <AlertTriangle size={14} /> },
-              { key: 'cleared', label: 'Decisions Approved', count: clearedCount, color: '#16a34a', bg: '#f0fdf4', icon: <CheckCircle2 size={14} /> },
-            ].map(card => {
-              const active = statusFilter === card.key;
-              return (
-                <div
-                  key={card.key}
-                  onClick={() => setStatusFilter(card.key)}
+          {/* Certificate of Approval Award Banner for Approved Applications */}
+          {apps.some(a => (a.status || '').toUpperCase() === 'APPROVED' || (a.status || '').toUpperCase() === 'DECISION_RECORDED' || (a.final_decision || '').toUpperCase() === 'CLEARED' || (a.status || '').toUpperCase() === 'CLEARED' || Boolean(a.certificate_issued)) && (
+            <div style={{
+              background: 'linear-gradient(135deg, #fef3c7 0%, #fffbeb 50%, #fef3c7 100%)',
+              border: '2px solid #d97706',
+              borderRadius: '8px',
+              padding: '16px 20px',
+              marginBottom: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '14px',
+              boxShadow: '0 4px 14px rgba(217, 119, 6, 0.15)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <div style={{
+                  width: '46px',
+                  height: '46px',
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg, #b45309, #d97706)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#ffffff',
+                  boxShadow: '0 2px 6px rgba(180, 83, 9, 0.3)',
+                  flexShrink: 0
+                }}>
+                  <Award size={26} />
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '15px', fontWeight: '800', color: '#78350f', letterSpacing: '0.3px' }}>
+                      AICTE Extension of Approval (EoA) Granted &bull; Academic Year 2026–2027
+                    </span>
+                    <span style={{
+                      padding: '2px 8px',
+                      background: '#059669',
+                      color: '#ffffff',
+                      borderRadius: '10px',
+                      fontSize: '10px',
+                      fontWeight: '800'
+                    }}>
+                      OFFICIALLY APPROVED
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#92400e', marginTop: '3px', lineHeight: '1.4' }}>
+                    Congratulations! All statutory clearances and APH norms have been verified. Your official AICTE Certificate of Approval is ready for download and print.
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    const approved = apps.find(a => (a.status || '').toUpperCase() === 'APPROVED' || (a.status || '').toUpperCase() === 'DECISION_RECORDED' || (a.final_decision || '').toUpperCase() === 'CLEARED' || (a.status || '').toUpperCase() === 'CLEARED' || Boolean(a.certificate_issued));
+                    if (approved) {
+                      setCertificateApp(approved);
+                      setShowCertificateModal(true);
+                    }
+                  }}
                   style={{
-                    background: '#ffffff',
-                    border: active ? '2px solid #09090b' : '1px solid #e2e8f0',
-                    borderRadius: '10px',
-                    padding: '16px',
-                    boxShadow: active ? '0 4px 12px rgba(0,0,0,0.08)' : '0 1px 3px rgba(0,0,0,0.04)',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease'
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '9px 18px',
+                    fontWeight: '700',
+                    background: 'linear-gradient(135deg, #1e3a8a, #1d4ed8)',
+                    color: '#ffffff',
+                    boxShadow: '0 2px 8px rgba(30, 58, 138, 0.35)'
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <span style={{ fontSize: '11.5px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.3px' }}>{card.label}</span>
-                    <span className="black-logo-badge-sm">{card.icon}</span>
+                  <Award size={16} />
+                  <span>Download Approval Certificate</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 6 Essential Summary Metric Counters (Section 4) */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+            gap: '12px',
+            marginBottom: '20px'
+          }}>
+            <div className="gov-card" style={{ padding: '14px' }}>
+              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600' }}>Total Applications</div>
+              <div style={{ fontSize: '22px', fontWeight: '800', color: '#0f172a', marginTop: '4px' }}>
+                {stats?.total_applications || apps.length}
+              </div>
+            </div>
+
+            <div className="gov-card" style={{ padding: '14px', borderLeft: '4px solid #94a3b8' }}>
+              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600' }}>Draft Applications</div>
+              <div style={{ fontSize: '22px', fontWeight: '800', color: '#475569', marginTop: '4px' }}>
+                {stats?.draft_applications || apps.filter(a => a.status === 'DRAFT').length}
+              </div>
+            </div>
+
+            <div className="gov-card" style={{ padding: '14px', borderLeft: '4px solid #f59e0b', background: '#fffbeb' }}>
+              <div style={{ fontSize: '11px', color: '#b45309', fontWeight: '700' }}>Action Required</div>
+              <div style={{ fontSize: '22px', fontWeight: '800', color: '#b45309', marginTop: '4px' }}>
+                {stats?.action_required_applications || apps.filter(a => a.status === 'ACTION_REQUIRED').length}
+              </div>
+            </div>
+
+            <div className="gov-card" style={{ padding: '14px', borderLeft: '4px solid #10b981', background: '#ecfdf5' }}>
+              <div style={{ fontSize: '11px', color: '#047857', fontWeight: '700' }}>Ready for Review</div>
+              <div style={{ fontSize: '22px', fontWeight: '800', color: '#047857', marginTop: '4px' }}>
+                {stats?.ready_for_review_applications || apps.filter(a => a.status === 'READY_FOR_REVIEW').length}
+              </div>
+            </div>
+
+            <div className="gov-card" style={{ padding: '14px', borderLeft: '4px solid #0284c7' }}>
+              <div style={{ fontSize: '11px', color: '#0369a1', fontWeight: '600' }}>Under Review</div>
+              <div style={{ fontSize: '22px', fontWeight: '800', color: '#0369a1', marginTop: '4px' }}>
+                {stats?.under_review_applications || apps.filter(a => a.status === 'UNDER_SCRUTINY' || a.status === 'UNDER_COMPLIANCE_REVIEW').length}
+              </div>
+            </div>
+
+            <div className="gov-card" style={{ padding: '14px', borderLeft: '4px solid #6366f1' }}>
+              <div style={{ fontSize: '11px', color: '#4338ca', fontWeight: '600' }}>Decision Recorded</div>
+              <div style={{ fontSize: '22px', fontWeight: '800', color: '#4338ca', marginTop: '4px' }}>
+                {stats?.decision_recorded_applications || apps.filter(a => a.status === 'DECISION_RECORDED').length}
+              </div>
+            </div>
+          </div>
+
+          {/* Compact Applications Table (Section 4) */}
+          <div className="gov-card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: '700', color: '#0f172a', margin: 0 }}>
+                My Regulatory Applications
+              </h3>
+              <span style={{ fontSize: '11px', color: '#64748b' }}>
+                Academic Year 2026-27 Approval Filing
+              </span>
+            </div>
+
+            <div className="table-responsive">
+              <table className="gov-table">
+                <thead>
+                  <tr>
+                    <th>Application ID</th>
+                    <th>Institution</th>
+                    <th>Application Type</th>
+                    <th>Submission Date</th>
+                    <th>Status</th>
+                    <th>Next Action</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {apps.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} style={{ textAlign: 'center', padding: '30px', color: '#64748b' }}>
+                        No applications created yet. Click "+ Create Application" to begin your regulatory submission.
+                      </td>
+                    </tr>
+                  ) : (
+                    apps.map(appItem => (
+                      <tr key={appItem.id}>
+                        <td style={{ fontWeight: '700', color: '#1d4ed8' }}>
+                          {appItem.application_id}
+                        </td>
+                        <td style={{ fontWeight: '600', color: '#0f172a' }}>
+                          {appItem.institution_name}
+                        </td>
+                        <td>{appItem.category || 'Extension of Approval'}</td>
+                        <td style={{ fontSize: '11.5px', color: '#475569' }}>
+                          {new Date(appItem.submitted_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        </td>
+                        <td>
+                          <span className={`status-badge status-${appItem.status?.toLowerCase()}`}>
+                            {appItem.status?.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: '11.5px', fontWeight: '600', color: appItem.status === 'ACTION_REQUIRED' ? '#b45309' : '#334155' }}>
+                          {getNextActionText(appItem.status)}
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => loadAppDetails(appItem)}
+                              style={{ padding: '3px 8px', fontSize: '11px' }}
+                            >
+                              <Eye size={12} />
+                              <span>View Dossier</span>
+                            </button>
+
+                            {appItem.status === 'ACTION_REQUIRED' && (
+                              <button
+                                className="btn btn-primary btn-sm"
+                                onClick={() => loadAppDetails(appItem)}
+                                style={{ padding: '3px 8px', fontSize: '11px', background: '#d97706', borderColor: '#d97706' }}
+                              >
+                                <span>Resolve</span>
+                              </button>
+                            )}
+
+                            {appItem.status === 'READY_FOR_REVIEW' && (
+                              <button
+                                className="btn btn-primary btn-sm"
+                                onClick={() => handleSubmitToOfficer(appItem.application_id)}
+                                style={{ padding: '3px 8px', fontSize: '11px' }}
+                              >
+                                <Send size={12} />
+                                <span>Submit</span>
+                              </button>
+                            )}
+
+                            {((appItem.status || '').toUpperCase() === 'APPROVED' || (appItem.status || '').toUpperCase() === 'DECISION_RECORDED' || (appItem.final_decision || '').toUpperCase() === 'CLEARED' || (appItem.status || '').toUpperCase() === 'CLEARED' || Boolean(appItem.certificate_issued)) && (
+                              <button
+                                className="btn btn-sm"
+                                onClick={() => {
+                                  setCertificateApp(appItem);
+                                  setShowCertificateModal(true);
+                                }}
+                                style={{
+                                  padding: '3px 8px',
+                                  fontSize: '11px',
+                                  background: 'linear-gradient(135deg, #059669, #047857)',
+                                  color: '#ffffff',
+                                  border: '1px solid #065f46',
+                                  fontWeight: '700',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                                title="Download Official AICTE Certificate"
+                              >
+                                <Award size={12} />
+                                <span>Certificate</span>
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Active Application Deficiency & Resolution Drawer (Section 7) */}
+          {selectedApp && (
+            <div className="gov-card" style={{ marginTop: '20px', borderTop: '3px solid #1d4ed8' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+                <div>
+                  <div style={{ fontSize: '11px', color: '#1d4ed8', fontWeight: '700' }}>Active Application Focus</div>
+                  <h3 style={{ fontSize: '16px', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                    {selectedApp.application_id} — {selectedApp.category}
+                  </h3>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => handleValidateApplication(selectedApp.application_id)}
+                    disabled={validatingAppId === selectedApp.application_id}
+                  >
+                    <RefreshCw size={13} className={validatingAppId === selectedApp.application_id ? 'animate-spin' : ''} />
+                    <span>{validatingAppId === selectedApp.application_id ? 'Validating...' : 'Run AI Validation'}</span>
+                  </button>
+
+                  {selectedApp.status === 'READY_FOR_REVIEW' && (
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => handleSubmitToOfficer(selectedApp.application_id)}
+                    >
+                      <Send size={13} />
+                      <span>Submit to Scrutiny Officer</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Status Alert Banner */}
+              {selectedApp.status === 'ACTION_REQUIRED' && (
+                <div style={{
+                  padding: '16px',
+                  background: '#fffbeb',
+                  border: '1.5px solid #fcd34d',
+                  borderRadius: '8px',
+                  marginBottom: '16px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                    <AlertTriangle size={18} color="#b45309" />
+                    <span style={{ fontSize: '13.5px', fontWeight: '800', color: '#92400e' }}>
+                      Action Required — Application Deficiencies Detected
+                    </span>
                   </div>
-                  <div style={{ fontSize: '24px', fontWeight: '800', color: card.color }}>
-                    {card.count}
+                  <p style={{ fontSize: '12px', color: '#78350f', margin: '0 0 12px 0', lineHeight: '1.45' }}>
+                    AI Validation has identified missing certificates, anomalies, or validity issues. Please review the deficiency checklist and AICTE APH recommendations below, upload the corrected replacement documents, and re-validate before submission.
+                  </p>
+
+                  {/* Officer Directives Banner (if officer sent suggestions) */}
+                  {selectedApp.officer_suggestions && (
+                    <div style={{
+                      padding: '12px 14px',
+                      background: '#fdf4ff',
+                      border: '1.5px solid #e879f9',
+                      borderRadius: '6px',
+                      marginBottom: '14px'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <AlertTriangle size={15} color="#a21caf" />
+                          <span style={{ fontSize: '12.5px', fontWeight: '800', color: '#86198f' }}>
+                            AICTE Approval Officer Directive ({selectedApp.officer_name || 'Dr. Priya Sharma'}):
+                          </span>
+                        </div>
+                        {selectedApp.officer_reviewed_at && (
+                          <span style={{ fontSize: '11px', color: '#a21caf' }}>
+                            {new Date(selectedApp.officer_reviewed_at).toLocaleDateString('en-IN')}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#4a044e', lineHeight: '1.45', background: '#ffffff', padding: '8px 12px', borderRadius: '4px', border: '1px solid #f5d0fe' }}>
+                        {selectedApp.officer_suggestions}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* List of open findings with AI suggestions */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {selectedApp.findings?.filter(f => f.status === 'open').map(f => (
+                      <div
+                        key={f.id}
+                        style={{
+                          padding: '12px',
+                          background: '#ffffff',
+                          border: '1px solid #fed7aa',
+                          borderRadius: '6px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '12.5px', fontWeight: '700', color: '#0f172a' }}>
+                            {f.rule_description}
+                          </span>
+                          <span style={{
+                            fontSize: '10.5px',
+                            fontWeight: '700',
+                            padding: '2px 6px',
+                            borderRadius: '3px',
+                            background: f.severity === 'critical' ? '#fee2e2' : '#fef3c7',
+                            color: f.severity === 'critical' ? '#991b1b' : '#92400e'
+                          }}>
+                            {f.severity?.toUpperCase()}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '11.5px', color: '#475569', marginBottom: '4px' }}>
+                          <strong>Issue Detected:</strong> {f.detected_issue || f.finding_text}
+                        </div>
+                        {f.why_attention_needed && (
+                          <div style={{ fontSize: '11.5px', color: '#64748b', marginBottom: '4px' }}>
+                            <strong>Regulatory Impact:</strong> {f.why_attention_needed}
+                          </div>
+                        )}
+                        <div style={{ fontSize: '11.5px', color: '#1d4ed8', fontWeight: '600', marginBottom: f.ai_suggestion ? '6px' : '0' }}>
+                          <strong>Required Action:</strong> {f.recommended_action || 'Upload corrected document.'}
+                        </div>
+
+                        {/* AI remediation suggestion */}
+                        {f.ai_suggestion && (
+                          <div style={{
+                            padding: '8px 10px',
+                            background: '#f0fdf4',
+                            border: '1px solid #86efac',
+                            borderRadius: '4px',
+                            fontSize: '11.5px',
+                            color: '#166534',
+                            lineHeight: '1.4'
+                          }}>
+                            <div style={{ fontWeight: '800', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <span>🤖 AI Guidance (What to Change as per AICTE APH):</span>
+                            </div>
+                            <div>{f.ai_suggestion}</div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
+                </div>
+              )}
+
+              {/* Ready for Review Banner */}
+              {selectedApp.status === 'READY_FOR_REVIEW' && (
+                <div style={{
+                  padding: '16px',
+                  background: '#ecfdf5',
+                  border: '1.5px solid #a7f3d0',
+                  borderRadius: '8px',
+                  marginBottom: '16px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                    <CheckCircle2 size={18} color="#047857" />
+                    <span style={{ fontSize: '13.5px', fontWeight: '800', color: '#065f46' }}>
+                      AI Document Validation Passed 100% (Ready for Officer Approval)
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '12px', color: '#065f46', margin: '0 0 10px 0' }}>
+                    All statutory internal validation checks and document integrity checks have passed. You may now submit your application to the AICTE Approval Officer for statutory review and issuance of approval certificate.
+                  </p>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => handleSubmitToOfficer(selectedApp.application_id)}
+                    style={{ background: '#059669', borderColor: '#047857', fontWeight: '700' }}
+                  >
+                    <Send size={13} />
+                    <span>Submit Application to AICTE Approval Officer</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Official Approval & Certificate Issued Banner */}
+              {(selectedApp.status === 'APPROVED' || selectedApp.certificate_issued || selectedApp.status === 'DECISION_RECORDED') && (
+                <div style={{
+                  padding: '16px 20px',
+                  background: 'linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%)',
+                  border: '2px solid #059669',
+                  borderRadius: '8px',
+                  marginBottom: '16px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                        <CheckCircle2 size={20} color="#059669" />
+                        <span style={{ fontSize: '14.5px', fontWeight: '800', color: '#065f46' }}>
+                          Official AICTE Approval Granted &bull; Academic Year 2026–2027
+                        </span>
+                      </div>
+                      <p style={{ fontSize: '12px', color: '#047857', margin: '0 0 4px 0' }}>
+                        Certificate Number: <strong>{selectedApp.certificate_number || `AICTE/CERT/2026-27/${selectedApp.application_id}`}</strong> &bull;
+                        Approval Authority: <strong>{selectedApp.officer_name || 'Dr. Priya Sharma'}</strong>
+                      </p>
+                      <div style={{ fontSize: '11.5px', color: '#334155' }}>
+                        Statutory Approval Remarks: {selectedApp.officer_suggestions || selectedApp.decision_remarks || 'Extension of Approval granted following comprehensive scrutiny.'}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={() => {
+                          setCertificateApp(selectedApp);
+                          setShowCertificateModal(true);
+                        }}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '8px 16px',
+                          background: 'linear-gradient(135deg, #059669, #047857)',
+                          color: '#ffffff',
+                          fontWeight: '700',
+                          boxShadow: '0 2px 8px rgba(5, 150, 105, 0.3)'
+                        }}
+                      >
+                        <Award size={15} />
+                        <span>Download Approval Certificate</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Clarification Requested Banner */}
+              {selectedApp.status === 'CLARIFICATION_REQUESTED' && (
+                <div style={{
+                  padding: '16px',
+                  background: '#fff7ed',
+                  border: '1px solid #fed7aa',
+                  borderRadius: '6px',
+                  marginBottom: '16px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                        <AlertTriangle size={18} color="#c2410c" />
+                        <span style={{ fontSize: '13.5px', fontWeight: '800', color: '#9a3412' }}>
+                          Clarification Requested by Regulatory Officer
+                        </span>
+                      </div>
+                      <p style={{ fontSize: '12px', color: '#7c2d12', margin: '0 0 6px 0', lineHeight: '1.4' }}>
+                        <strong>Officer Query:</strong> {selectedApp.verification_remarks ||
+                          selectedApp.review_actions?.find(a => a.action_type === 'CLARIFICATION_REQUESTED')?.comments ||
+                          'Additional clarification required regarding institutional land/cadre norms.'}
+                      </p>
+                    </div>
+
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => setShowClarificationModal(true)}
+                      style={{ background: '#c2410c', borderColor: '#c2410c', padding: '8px 14px' }}
+                    >
+                      <span>Furnish Clarification Reply</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Uploaded Documents with Version History */}
+              <div style={{ marginTop: '16px' }}>
+                <h4 style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a', marginBottom: '10px' }}>
+                  Uploaded Supporting Clearances &amp; Upload Replacement
+                </h4>
+
+                <div className="table-responsive">
+                  <table className="gov-table">
+                    <thead>
+                      <tr>
+                        <th>Document Type</th>
+                        <th>Current File</th>
+                        <th>Version</th>
+                        <th>Status</th>
+                        <th>Upload Corrected Version</th>
+                        <th>View</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {REQUIRED_DOCS_LIST.map(reqDoc => {
+                        const uploaded = appDocs.find(d => d.doc_type?.toLowerCase().includes(reqDoc.doc_type.toLowerCase()) || reqDoc.doc_type.toLowerCase().includes(d.doc_type?.toLowerCase()));
+                        return (
+                          <tr key={reqDoc.doc_type}>
+                            <td style={{ fontWeight: '600', color: '#0f172a' }}>
+                              {reqDoc.doc_type}
+                              <div style={{ fontSize: '10.5px', color: '#64748b' }}>{reqDoc.required_value}</div>
+                            </td>
+                            <td>
+                              {uploaded ? (
+                                <span style={{ fontSize: '11.5px', color: '#334155' }}>{uploaded.filename}</span>
+                              ) : (
+                                <span style={{ fontSize: '11.5px', color: '#dc2626', fontWeight: '600' }}>Not Uploaded</span>
+                              )}
+                            </td>
+                            <td>
+                              {uploaded ? (
+                                <span style={{
+                                  fontSize: '10.5px',
+                                  fontWeight: '700',
+                                  padding: '2px 6px',
+                                  borderRadius: '3px',
+                                  background: (uploaded.version || 1) > 1 ? '#e0f2fe' : '#f1f5f9',
+                                  color: (uploaded.version || 1) > 1 ? '#0369a1' : '#475569'
+                                }}>
+                                  v{uploaded.version || 1}
+                                </span>
+                              ) : '-'}
+                            </td>
+                            <td>
+                              {uploaded ? (
+                                <span className={`status-badge status-${uploaded.status?.toLowerCase()}`}>
+                                  {uploaded.status}
+                                </span>
+                              ) : (
+                                <span className="status-badge status-deficiency">Missing</span>
+                              )}
+                            </td>
+                            <td>
+                              <label
+                                className="btn btn-secondary btn-sm"
+                                style={{ padding: '3px 8px', fontSize: '11px', cursor: 'pointer', margin: 0 }}
+                              >
+                                <Upload size={12} />
+                                <span>{uploadingDocType === reqDoc.doc_type ? 'Uploading...' : (uploaded ? 'Upload New v2' : 'Upload')}</span>
+                                <input
+                                  type="file"
+                                  accept=".pdf,.png,.jpg,.jpeg"
+                                  style={{ display: 'none' }}
+                                  disabled={uploadingDocType === reqDoc.doc_type}
+                                  onChange={e => {
+                                    if (e.target.files && e.target.files[0]) {
+                                      handleUploadReplacement(selectedApp.application_id, reqDoc.doc_type, e.target.files[0]);
+                                    }
+                                  }}
+                                />
+                              </label>
+                            </td>
+                            <td>
+                              {uploaded ? (
+                                <div style={{ display: 'flex', gap: '6px' }}>
+                                  <button
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => setInspectingDoc(uploaded)}
+                                    style={{ padding: '3px 8px', fontSize: '11px' }}
+                                    title="Inspect Extracted OCR Key-Values"
+                                  >
+                                    <Eye size={12} />
+                                    <span>OCR</span>
+                                  </button>
+                                  <a
+                                    href={getDocumentDownloadUrl(uploaded.id)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="btn btn-secondary btn-sm"
+                                    style={{ padding: '3px 8px', fontSize: '11px' }}
+                                    title="Open Document File"
+                                  >
+                                    <ExternalLink size={12} />
+                                  </a>
+                                </div>
+                              ) : '-'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* 2. APPLICATION CREATION WIZARD (Section 5) */}
+      {/* ============================================================ */}
+      {subPage === 'inst-create-app' && (
+        <div className="gov-card">
+          <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '18px' }}>
+            <h2 style={{ fontSize: '16px', fontWeight: '800', color: '#0f172a', margin: '0 0 4px 0' }}>
+              Create AICTE Regulatory Application (Academic Year 2026-27)
+            </h2>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>
+              Follow the 4-step wizard to file application and upload required statutory documents.
+            </div>
+          </div>
+
+          {/* Wizard Step Indicator */}
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
+            {['1. Institution Details', '2. Application Details', '3. Required Documents', '4. Review & Submit'].map((stLabel, idx) => {
+              const stNum = idx + 1;
+              const isCurrent = wizardStep === stNum;
+              const isDone = wizardStep > stNum;
+              return (
+                <div
+                  key={stLabel}
+                  style={{
+                    flex: 1,
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    background: isCurrent ? '#eff6ff' : (isDone ? '#ecfdf5' : '#f8fafc'),
+                    border: `1px solid ${isCurrent ? '#3b82f6' : (isDone ? '#a7f3d0' : '#e2e8f0')}`,
+                    fontSize: '11.5px',
+                    fontWeight: isCurrent || isDone ? '700' : '500',
+                    color: isCurrent ? '#1d4ed8' : (isDone ? '#047857' : '#64748b'),
+                    textAlign: 'center'
+                  }}
+                >
+                  {isDone ? '✓ ' : ''}{stLabel}
                 </div>
               );
             })}
           </div>
 
-          {/* Quick Notice Banner & Deadlines */}
-          <div style={{
-            background: '#fffbeb',
-            border: '1px solid #fde68a',
-            borderRadius: '8px',
-            padding: '14px 18px',
-            marginBottom: '24px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ fontSize: '20px' }}>📢</span>
-              <div>
-                <div style={{ fontSize: '13px', fontWeight: '700', color: '#92400e' }}>
-                  AICTE Approval Process Handbook (APH 2026-27) Notification
+          {/* STEP 1: INSTITUTION DETAILS */}
+          {wizardStep === 1 && (
+            <div>
+              <h3 style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a', marginBottom: '14px' }}>
+                Step 1: Verify Registered Institution Profile
+              </h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px', marginBottom: '20px' }}>
+                <div>
+                  <label className="form-label">Institution Legal Name:</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={wizardForm.institution_name}
+                    onChange={e => setWizardForm({ ...wizardForm, institution_name: e.target.value })}
+                  />
                 </div>
-                <div style={{ fontSize: '12px', color: '#b45309' }}>
-                  Institutions with open deficiency notices must submit rectifications within 15 calendar days from the date of issue.
+                <div>
+                  <label className="form-label">Institution Type:</label>
+                  <select
+                    className="form-control"
+                    value={wizardForm.institution_type}
+                    onChange={e => setWizardForm({ ...wizardForm, institution_type: e.target.value })}
+                  >
+                    <option value="Engineering & Technology">Engineering &amp; Technology</option>
+                    <option value="Polytechnic">Polytechnic / Diploma</option>
+                    <option value="Management">Management (MBA/PGDM)</option>
+                    <option value="Pharmacy">Pharmacy</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="form-label">State:</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={wizardForm.state}
+                    onChange={e => setWizardForm({ ...wizardForm, state: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="form-label">City / District:</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={wizardForm.city}
+                    onChange={e => setWizardForm({ ...wizardForm, city: e.target.value })}
+                  />
                 </div>
               </div>
-            </div>
-            <button
-              onClick={() => onNavigate('inst-create-app')}
-              style={{
-                background: '#1e3a8a',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: '6px',
-                padding: '8px 16px',
-                fontSize: '12.5px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              + Create New Application
-            </button>
-          </div>
 
-          {/* Filtered Application List */}
-          <div style={{
-            background: '#ffffff',
-            border: '1px solid #e2e8f0',
-            borderRadius: '10px',
-            padding: '20px',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <div>
-                <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#0f172a', margin: 0 }}>
-                  Active Institutional Applications
-                </h3>
-                <span style={{ fontSize: '12px', color: '#64748b' }}>
-                  Showing {filteredApps.length} of {apps.length} records (Filter: {statusFilter.toUpperCase()})
+              <div style={{ textAlign: 'right' }}>
+                <button className="btn btn-primary" onClick={() => setWizardStep(2)}>
+                  Proceed to Step 2: Application Details <ArrowRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 2: APPLICATION DETAILS */}
+          {wizardStep === 2 && (
+            <div>
+              <h3 style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a', marginBottom: '14px' }}>
+                Step 2: Enter Application Filing Details
+              </h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px', marginBottom: '20px' }}>
+                <div>
+                  <label className="form-label">Application Category:</label>
+                  <select
+                    className="form-control"
+                    value={wizardForm.category}
+                    onChange={e => setWizardForm({ ...wizardForm, category: e.target.value })}
+                  >
+                    <option value="Extension of Approval (EoA)">Extension of Approval (EoA)</option>
+                    <option value="New Technical Course Addition">New Technical Course Addition</option>
+                    <option value="Intake Capacity Expansion">Intake Capacity Expansion</option>
+                    <option value="Closure / Conversion of Program">Closure / Conversion of Program</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="form-label">Academic Year:</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={wizardForm.academic_year}
+                    readOnly
+                  />
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label className="form-label">Program &amp; Course Specifics Applied For:</label>
+                  <textarea
+                    className="form-control"
+                    rows={3}
+                    value={wizardForm.applied_for}
+                    onChange={e => setWizardForm({ ...wizardForm, applied_for: e.target.value })}
+                    placeholder="Specify courses, proposed intake numbers, or expansion programs..."
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <button className="btn btn-secondary btn-sm" onClick={() => setWizardStep(1)}>
+                  Back
+                </button>
+                <button className="btn btn-primary" onClick={handleWizardSubmitStep2}>
+                  Create Draft &amp; Proceed to Uploads <ArrowRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3: REQUIRED SUPPORTING DOCUMENTS */}
+          {wizardStep === 3 && wizardCreatedApp && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                <div>
+                  <h3 style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a', margin: '0 0 2px 0' }}>
+                    Step 3: Upload Mandatory Supporting Documents
+                  </h3>
+                  <span style={{ fontSize: '11.5px', color: '#64748b' }}>
+                    Application ID: <strong>{wizardCreatedApp.application_id}</strong> · Allowed formats: PDF, PNG, JPG (under 10MB)
+                  </span>
+                </div>
+                <span style={{ fontSize: '11.5px', fontWeight: '700', color: '#1d4ed8' }}>
+                  {appDocs.length} / 5 Uploaded
                 </span>
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <input
-                  type="text"
-                  placeholder="Search application ID or category..."
-                  value={searchTerm}
-                  onChange={e => setSearchTerm(e.target.value)}
-                  style={{
-                    padding: '6px 12px',
-                    fontSize: '12.5px',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: '6px',
-                    width: '260px'
-                  }}
-                />
-                {statusFilter !== 'all' && (
-                  <button
-                    onClick={() => setStatusFilter('all')}
-                    style={{
-                      padding: '6px 12px',
-                      fontSize: '12px',
-                      background: '#f1f5f9',
-                      border: '1px solid #cbd5e1',
-                      borderRadius: '6px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Reset Filter
-                  </button>
-                )}
-              </div>
-            </div>
 
-            {filteredApps.length === 0 ? (
-              <div style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>
-                No applications found matching the current filter.
-              </div>
-            ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12.5px' }}>
+              <div className="table-responsive" style={{ marginBottom: '20px' }}>
+                <table className="gov-table">
                   <thead>
-                    <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>
-                      <th style={{ padding: '10px 14px' }}>Application ID</th>
-                      <th style={{ padding: '10px 14px' }}>Category</th>
-                      <th style={{ padding: '10px 14px' }}>Academic Year</th>
-                      <th style={{ padding: '10px 14px' }}>Submission Date</th>
-                      <th style={{ padding: '10px 14px' }}>Current Stage</th>
-                      <th style={{ padding: '10px 14px' }}>Status</th>
-                      <th style={{ padding: '10px 14px', textAlign: 'right' }}>Action</th>
+                    <tr>
+                      <th>Document Type</th>
+                      <th>Category</th>
+                      <th>Regulatory Standard</th>
+                      <th>Current File</th>
+                      <th>Upload File</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredApps.map(a => {
-                      const appId = a.application_id || String(a.id);
+                    {REQUIRED_DOCS_LIST.map(reqDoc => {
+                      const uploaded = appDocs.find(d => d.doc_type?.toLowerCase().includes(reqDoc.doc_type.toLowerCase()));
                       return (
-                        <tr key={appId} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: '12px 14px', fontWeight: '700', color: '#1e3a8a' }}>
-                            {appId}
+                        <tr key={reqDoc.doc_type}>
+                          <td style={{ fontWeight: '600', color: '#0f172a' }}>{reqDoc.doc_type}</td>
+                          <td>{reqDoc.category}</td>
+                          <td style={{ fontSize: '11px', color: '#64748b' }}>{reqDoc.required_value}</td>
+                          <td>
+                            {uploaded ? (
+                              <span style={{ color: '#059669', fontWeight: '600', fontSize: '11.5px' }}>
+                                ✓ {uploaded.filename}
+                              </span>
+                            ) : (
+                              <span style={{ color: '#dc2626', fontSize: '11px' }}>Pending</span>
+                            )}
                           </td>
-                          <td style={{ padding: '12px 14px' }}>
-                            {a.category || a.application_type || 'Extension of Approval (EoA)'}
-                          </td>
-                          <td style={{ padding: '12px 14px' }}>
-                            2026-27
-                          </td>
-                          <td style={{ padding: '12px 14px', color: '#64748b' }}>
-                            {a.submitted_at ? new Date(a.submitted_at).toLocaleDateString() : 'Draft'}
-                          </td>
-                          <td style={{ padding: '12px 14px' }}>
-                            <span style={{
-                              padding: '3px 8px',
-                              borderRadius: '4px',
-                              fontSize: '11px',
-                              fontWeight: '600',
-                              background: '#eff6ff',
-                              color: '#1d4ed8'
-                            }}>
-                              {(a.current_stage || 'Submission').replace('_', ' ').toUpperCase()}
-                            </span>
-                          </td>
-                          <td style={{ padding: '12px 14px' }}>
-                            <span style={{
-                              padding: '3px 8px',
-                              borderRadius: '4px',
-                              fontSize: '11px',
-                              fontWeight: '700',
-                              background:
-                                a.status === 'cleared' ? '#dcfce7' :
-                                a.status === 'deficiency' ? '#fee2e2' :
-                                a.status === 'draft' ? '#f1f5f9' : '#e0f2fe',
-                              color:
-                                a.status === 'cleared' ? '#15803d' :
-                                a.status === 'deficiency' ? '#b91c1c' :
-                                a.status === 'draft' ? '#475569' : '#0369a1'
-                            }}>
-                              {(a.status || 'Draft').toUpperCase()}
-                            </span>
-                          </td>
-                          <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                              <button
-                                onClick={() => handleTriggerAiValidation(appId)}
-                                disabled={aiRunning}
-                                style={{
-                                  padding: '5px 10px',
-                                  fontSize: '11px',
-                                  background: '#eff6ff',
-                                  color: '#1d4ed8',
-                                  border: '1px solid #bfdbfe',
-                                  borderRadius: '4px',
-                                  cursor: 'pointer',
-                                  fontWeight: '600'
+                          <td>
+                            <label
+                              className="btn btn-secondary btn-sm"
+                              style={{ padding: '3px 8px', fontSize: '11px', cursor: 'pointer', margin: 0 }}
+                            >
+                              <Upload size={12} />
+                              <span>{uploadingDocType === reqDoc.doc_type ? 'Uploading...' : 'Upload'}</span>
+                              <input
+                                type="file"
+                                accept=".pdf,.png,.jpg,.jpeg"
+                                style={{ display: 'none' }}
+                                disabled={uploadingDocType === reqDoc.doc_type}
+                                onChange={e => {
+                                  if (e.target.files && e.target.files[0]) {
+                                    handleUploadReplacement(wizardCreatedApp.application_id, reqDoc.doc_type, e.target.files[0]);
+                                  }
                                 }}
-                                title="Execute Document Intelligence, Anomaly, Issuer & Compliance Agents"
-                              >
-                                {aiRunning ? '⚙️ AI Processing...' : '🤖 Run AI Checks'}
-                              </button>
-                              <button
-                                onClick={() => onSelectApp(appId)}
-                                style={{
-                                  padding: '5px 10px',
-                                  fontSize: '11.5px',
-                                  background: '#1e3a8a',
-                                  color: '#ffffff',
-                                  border: 'none',
-                                  borderRadius: '4px',
-                                  cursor: 'pointer'
-                                }}
-                              >
-                                View Dossier
-                              </button>
-                              {a.status === 'deficiency' && (
-                                <button
-                                  onClick={() => onNavigate('inst-deficiencies')}
-                                  style={{
-                                    padding: '5px 10px',
-                                    fontSize: '11.5px',
-                                    background: '#fee2e2',
-                                    color: '#b91c1c',
-                                    border: '1px solid #fecaca',
-                                    borderRadius: '4px',
-                                    cursor: 'pointer',
-                                    fontWeight: '600'
-                                  }}
-                                >
-                                  Rectify
-                                </button>
-                              )}
-                            </div>
+                              />
+                            </label>
                           </td>
                         </tr>
                       );
@@ -542,1226 +1173,416 @@ export default function InstitutionViews({ subPage, onNavigate, onSelectApp, onV
                   </tbody>
                 </table>
               </div>
-            )}
 
-            {/* AI Agent Execution Visual Telemetry */}
-            {aiResult && (
-              <div style={{
-                marginTop: '20px',
-                padding: '16px',
-                background: '#f8fafc',
-                border: '1px solid #bfdbfe',
-                borderRadius: '8px'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span className="live-pulse-dot"></span>
-                    <strong style={{ fontSize: '13px', color: '#1e3a8a' }}>
-                      5-Agent Autonomous AI Validation Completed
-                    </strong>
-                  </div>
-                  <span style={{ fontSize: '11.5px', fontWeight: '700', color: '#15803d', background: '#dcfce7', padding: '2px 8px', borderRadius: '10px' }}>
-                    Scrutiny Score: {aiResult.scrutiny_score}%
-                  </span>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <button className="btn btn-secondary btn-sm" onClick={() => setWizardStep(2)}>
+                  Back
+                </button>
+                <button className="btn btn-primary" onClick={() => setWizardStep(4)}>
+                  Review &amp; Submit for AI Validation <ArrowRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 4: REVIEW & SUBMIT FOR VALIDATION */}
+          {wizardStep === 4 && wizardCreatedApp && (
+            <div>
+              <h3 style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a', marginBottom: '14px' }}>
+                Step 4: Review Dossier and Submit for AI Validation
+              </h3>
+              <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '6px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
+                <div style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a', marginBottom: '8px' }}>
+                  Application Summary: {wizardCreatedApp.application_id}
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px' }}>
-                  {aiResult.agents_executed?.map((ag: any, i: number) => (
-                    <div key={i} style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px 10px' }}>
-                      <div style={{ fontSize: '11.5px', fontWeight: '700', color: '#0f172a' }}>{ag.agent}</div>
-                      <div style={{ fontSize: '10.5px', color: '#64748b' }}>{ag.task}</div>
-                      <div style={{ fontSize: '10.5px', color: '#15803d', fontWeight: '600', marginTop: '2px' }}>✓ {ag.status}</div>
-                    </div>
-                  ))}
+                <div style={{ fontSize: '12px', color: '#475569', lineHeight: '1.6' }}>
+                  ● <strong>Institution:</strong> {wizardCreatedApp.institution_name}<br />
+                  ● <strong>Category:</strong> {wizardCreatedApp.category} (AY {wizardCreatedApp.academic_year})<br />
+                  ● <strong>Applied For:</strong> {wizardCreatedApp.applied_for}<br />
+                  ● <strong>Documents Attached:</strong> {appDocs.length} statutory clearance(s) uploaded.
                 </div>
               </div>
-            )}
+
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <button className="btn btn-secondary btn-sm" onClick={() => setWizardStep(3)}>
+                  Back to Documents
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={async () => {
+                    await handleValidateApplication(wizardCreatedApp.application_id);
+                    onNavigate('inst-dashboard');
+                  }}
+                  disabled={validatingAppId === wizardCreatedApp.application_id}
+                >
+                  <RefreshCw size={14} className={validatingAppId === wizardCreatedApp.application_id ? 'animate-spin' : ''} />
+                  <span>{validatingAppId === wizardCreatedApp.application_id ? 'Validating...' : 'Submit Dossier for AI Validation'}</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* 3. MY APPLICATIONS (Section 11) */}
+      {/* ============================================================ */}
+      {subPage === 'inst-applications' && (
+        <div className="gov-card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <div>
+              <h2 style={{ fontSize: '16px', fontWeight: '800', color: '#0f172a', margin: '0 0 2px 0' }}>
+                My Regulatory Applications
+              </h2>
+              <span style={{ fontSize: '12px', color: '#64748b' }}>
+                Complete archive of applications submitted by {profile?.name || user?.full_name}
+              </span>
+            </div>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => {
+                setWizardStep(1);
+                onNavigate('inst-create-app');
+              }}
+            >
+              <Plus size={14} /> Create Application
+            </button>
+          </div>
+
+          <div className="table-responsive">
+            <table className="gov-table">
+              <thead>
+                <tr>
+                  <th>Application ID</th>
+                  <th>Category</th>
+                  <th>Academic Year</th>
+                  <th>Submission Date</th>
+                  <th>Status</th>
+                  <th>Score</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {apps.map(a => (
+                  <tr key={a.id}>
+                    <td style={{ fontWeight: '700', color: '#1d4ed8' }}>{a.application_id}</td>
+                    <td style={{ fontWeight: '600' }}>{a.category}</td>
+                    <td>{a.academic_year || '2026-27'}</td>
+                    <td style={{ fontSize: '11.5px', color: '#475569' }}>
+                      {new Date(a.submitted_at).toLocaleDateString('en-IN')}
+                    </td>
+                    <td>
+                      <span className={`status-badge status-${a.status?.toLowerCase()}`}>
+                        {a.status?.replace('_', ' ')}
+                      </span>
+                    </td>
+                    <td style={{ fontWeight: '700', color: a.scrutiny_score >= 80 ? '#059669' : '#b45309' }}>
+                      {a.scrutiny_score}%
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => {
+                            loadAppDetails(a);
+                            onNavigate('inst-dashboard');
+                          }}
+                          style={{ padding: '3px 8px', fontSize: '11px' }}
+                        >
+                          <Eye size={12} />
+                          <span>Open</span>
+                        </button>
+
+                        {((a.status || '').toUpperCase() === 'APPROVED' || (a.status || '').toUpperCase() === 'DECISION_RECORDED' || (a.final_decision || '').toUpperCase() === 'CLEARED' || (a.status || '').toUpperCase() === 'CLEARED' || Boolean(a.certificate_issued)) && (
+                          <button
+                            className="btn btn-sm"
+                            onClick={() => {
+                              setCertificateApp(a);
+                              setShowCertificateModal(true);
+                            }}
+                            style={{
+                              padding: '3px 8px',
+                              fontSize: '11px',
+                              background: 'linear-gradient(135deg, #059669, #047857)',
+                              color: '#ffffff',
+                              border: '1px solid #065f46',
+                              fontWeight: '700',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                            title="Download AICTE Certificate of Approval"
+                          >
+                            <Award size={12} />
+                            <span>Certificate</span>
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
-      {/* ============================================================
-          2. INSTITUTION PROFILE
-          ============================================================ */}
+      {/* ============================================================ */}
+      {/* 4. INSTITUTION PROFILE (Section 11) */}
+      {/* ============================================================ */}
       {subPage === 'inst-profile' && (
-        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '24px' }}>
-          <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '16px', marginBottom: '20px' }}>
-            <h2 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', margin: '0 0 4px 0' }}>
-              🏛️ Institution Profile &amp; Governance Details
+        <div className="gov-card">
+          <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '18px' }}>
+            <h2 style={{ fontSize: '16px', fontWeight: '800', color: '#0f172a', margin: '0 0 2px 0' }}>
+              Institution Regulatory Profile
             </h2>
-            <p style={{ fontSize: '12.5px', color: '#64748b', margin: 0 }}>
-              Authorized institution metadata validated against the AICTE Permanent Institution Registry.
-            </p>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>
+              Manage registered institution records, accreditation coordinates, and contact details
+            </div>
           </div>
 
-          {profileSaved && (
-            <div style={{ background: '#dcfce7', border: '1px solid #bbf7d0', color: '#15803d', padding: '10px 14px', borderRadius: '6px', marginBottom: '16px', fontSize: '12.5px' }}>
-              ✓ Institutional profile details updated and synced with regulatory registry.
+          {profileSavedMsg && (
+            <div style={{ padding: '10px 14px', background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '4px', color: '#065f46', fontSize: '12px', fontWeight: '600', marginBottom: '16px' }}>
+              {profileSavedMsg}
             </div>
           )}
 
           <form onSubmit={handleSaveProfile}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px', marginBottom: '20px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>
-                  Institution Name *
-                </label>
+                <label className="form-label">Institution Name:</label>
                 <input
                   type="text"
-                  value={profile.institution_name}
-                  onChange={e => setProfile({ ...profile, institution_name: e.target.value })}
-                  style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
-                  required
+                  className="form-control"
+                  value={profileEditForm.name}
+                  onChange={e => setProfileEditForm({ ...profileEditForm, name: e.target.value })}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>
-                  AICTE Permanent ID (Locked)
-                </label>
+                <label className="form-label">AICTE Permanent Identifier:</label>
                 <input
                   type="text"
-                  value={profile.institution_id}
-                  disabled
-                  style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #e2e8f0', background: '#f8fafc', borderRadius: '6px', color: '#64748b' }}
+                  className="form-control"
+                  value={profileEditForm.aicte_id}
+                  readOnly
+                  style={{ background: '#f8fafc' }}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>
-                  Institution Type
-                </label>
-                <select
-                  value={profile.institution_type}
-                  onChange={e => setProfile({ ...profile, institution_type: e.target.value })}
-                  style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
-                >
-                  <option value="Engineering">Engineering &amp; Technology</option>
-                  <option value="Polytechnic">Polytechnic Diploma</option>
-                  <option value="Management">Management (MBA/PGDM)</option>
-                  <option value="Pharmacy">Pharmacy</option>
-                  <option value="Architecture">Architecture &amp; Planning</option>
-                </select>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>
-                  Institutional Category
-                </label>
+                <label className="form-label">Affiliated University:</label>
                 <input
                   type="text"
-                  value={profile.category}
-                  onChange={e => setProfile({ ...profile, category: e.target.value })}
-                  style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                  className="form-control"
+                  value={profileEditForm.university_affiliation}
+                  onChange={e => setProfileEditForm({ ...profileEditForm, university_affiliation: e.target.value })}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>
-                  State
-                </label>
+                <label className="form-label">Contact Person (Principal/Dean):</label>
                 <input
                   type="text"
-                  value={profile.state}
-                  onChange={e => setProfile({ ...profile, state: e.target.value })}
-                  style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                  className="form-control"
+                  value={profileEditForm.contact_person}
+                  onChange={e => setProfileEditForm({ ...profileEditForm, contact_person: e.target.value })}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>
-                  District
-                </label>
-                <input
-                  type="text"
-                  value={profile.district}
-                  onChange={e => setProfile({ ...profile, district: e.target.value })}
-                  style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
-                />
-              </div>
-
-              <div style={{ gridColumn: 'span 2' }}>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>
-                  Campus Street Address
-                </label>
-                <input
-                  type="text"
-                  value={profile.address}
-                  onChange={e => setProfile({ ...profile, address: e.target.value })}
-                  style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>
-                  Authorized Representative (Principal / Director)
-                </label>
-                <input
-                  type="text"
-                  value={profile.contact_person}
-                  onChange={e => setProfile({ ...profile, contact_person: e.target.value })}
-                  style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>
-                  Official Contact Email
-                </label>
+                <label className="form-label">Official Email:</label>
                 <input
                   type="email"
-                  value={profile.email}
-                  onChange={e => setProfile({ ...profile, email: e.target.value })}
-                  style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                  className="form-control"
+                  value={profileEditForm.email}
+                  onChange={e => setProfileEditForm({ ...profileEditForm, email: e.target.value })}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>
-                  Affiliating University
-                </label>
+                <label className="form-label">Contact Phone:</label>
                 <input
                   type="text"
-                  value={profile.university}
-                  onChange={e => setProfile({ ...profile, university: e.target.value })}
-                  style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                  className="form-control"
+                  value={profileEditForm.phone}
+                  onChange={e => setProfileEditForm({ ...profileEditForm, phone: e.target.value })}
                 />
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>
-                  Campus Contiguous Land Area
-                </label>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label className="form-label">Official Campus Address:</label>
                 <input
                   type="text"
-                  value={profile.campus_acres}
-                  onChange={e => setProfile({ ...profile, campus_acres: e.target.value })}
-                  style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
+                  className="form-control"
+                  value={profileEditForm.address}
+                  onChange={e => setProfileEditForm({ ...profileEditForm, address: e.target.value })}
                 />
               </div>
             </div>
 
-            <div style={{ textAlign: 'right', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
-              <button
-                type="submit"
-                style={{
-                  background: '#1e3a8a',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  padding: '10px 20px',
-                  fontSize: '13px',
-                  fontWeight: '600',
-                  cursor: 'pointer'
-                }}
-              >
-                Save Profile Changes
+            <div style={{ textAlign: 'right' }}>
+              <button type="submit" className="btn btn-primary">
+                Save Institution Records
               </button>
             </div>
           </form>
         </div>
       )}
 
-      {/* ============================================================
-          3. MY APPLICATIONS
-          ============================================================ */}
-      {subPage === 'inst-applications' && (
-        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '24px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <div>
-              <h2 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', margin: '0 0 4px 0' }}>
-                📋 My Submissions Dossier
-              </h2>
-              <p style={{ fontSize: '12.5px', color: '#64748b', margin: 0 }}>
-                Comprehensive ledger of all applications submitted under your institutional account.
-              </p>
-            </div>
-            <button
-              onClick={() => onNavigate('inst-create-app')}
-              style={{
-                background: '#1e3a8a',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: '6px',
-                padding: '8px 16px',
-                fontSize: '12.5px',
-                fontWeight: '600',
-                cursor: 'pointer'
-              }}
-            >
-              + Create Application
-            </button>
-          </div>
-
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12.5px' }}>
-            <thead>
-              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>
-                <th style={{ padding: '10px 14px' }}>Application ID</th>
-                <th style={{ padding: '10px 14px' }}>Category</th>
-                <th style={{ padding: '10px 14px' }}>Applied Scope</th>
-                <th style={{ padding: '10px 14px' }}>Submission Date</th>
-                <th style={{ padding: '10px 14px' }}>Pipeline Stage</th>
-                <th style={{ padding: '10px 14px' }}>Regulatory Status</th>
-                <th style={{ padding: '10px 14px', textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {apps.map(a => {
-                const appId = a.application_id || String(a.id);
-                return (
-                  <tr key={appId} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '12px 14px', fontWeight: '700', color: '#1e3a8a' }}>
-                      {appId}
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      {a.category || a.application_type || 'Extension of Approval'}
-                    </td>
-                    <td style={{ padding: '12px 14px', color: '#475569' }}>
-                      {a.applied_for || 'B.Tech Regular Programs'}
-                    </td>
-                    <td style={{ padding: '12px 14px', color: '#64748b' }}>
-                      {a.submitted_at ? new Date(a.submitted_at).toLocaleDateString() : 'Draft'}
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <span style={{ padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', background: '#eff6ff', color: '#1d4ed8' }}>
-                        {(a.current_stage || 'submission').replace('_', ' ').toUpperCase()}
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <span style={{
-                        padding: '3px 8px',
-                        borderRadius: '4px',
-                        fontSize: '11px',
-                        fontWeight: '700',
-                        background: a.status === 'cleared' ? '#dcfce7' : a.status === 'deficiency' ? '#fee2e2' : '#e0f2fe',
-                        color: a.status === 'cleared' ? '#15803d' : a.status === 'deficiency' ? '#b91c1c' : '#0369a1'
-                      }}>
-                        {(a.status || 'Draft').toUpperCase()}
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                      <button
-                        onClick={() => onSelectApp(appId)}
-                        style={{
-                          padding: '5px 12px',
-                          fontSize: '11.5px',
-                          background: '#1e3a8a',
-                          color: '#ffffff',
-                          border: 'none',
-                          borderRadius: '4px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        Open Dossier
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* ============================================================
-          4. CREATE APPLICATION (Guided 8-Step Wizard)
-          ============================================================ */}
-      {subPage === 'inst-create-app' && (
-        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '24px' }}>
-          <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '16px', marginBottom: '20px' }}>
-            <h2 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', margin: '0 0 4px 0' }}>
-              ➕ Guided Application Submission Wizard (APH 2026-27)
+      {/* ============================================================ */}
+      {/* 5. NOTIFICATIONS (Section 11) */}
+      {/* ============================================================ */}
+      {subPage === 'inst-notifications' && (
+        <div className="gov-card">
+          <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '16px' }}>
+            <h2 style={{ fontSize: '16px', fontWeight: '800', color: '#0f172a', margin: '0 0 2px 0' }}>
+              Notifications &amp; Statutory Alerts
             </h2>
-            <p style={{ fontSize: '12.5px', color: '#64748b', margin: 0 }}>
-              Follow the guided 8-step workflow to submit institutional proposals for AICTE approval scrutiny.
-            </p>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>
+              Deficiency notices, status updates, and clarification requests from AICTE
+            </div>
           </div>
 
-          {/* Stepper Navigation */}
-          <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', marginBottom: '24px', paddingBottom: '8px' }}>
-            {[
-              '1. Category',
-              '2. Academic Year',
-              '3. Campus Details',
-              '4. Programs & Intake',
-              '5. Infrastructure',
-              '6. Declarations',
-              '7. Required Checklist',
-              '8. Submit Scrutiny'
-            ].map((stepName, idx) => {
-              const stepNum = idx + 1;
-              const isActive = wizardStep === stepNum;
-              const isPast = wizardStep > stepNum;
-              return (
+          {notifications.length === 0 ? (
+            <div style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>
+              No notifications at this time.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {notifications.map(n => (
                 <div
-                  key={stepName}
-                  onClick={() => setWizardStep(stepNum)}
+                  key={n.id}
                   style={{
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    fontSize: '12px',
-                    fontWeight: isActive ? '700' : '500',
-                    background: isActive ? '#1e3a8a' : isPast ? '#dcfce7' : '#f1f5f9',
-                    color: isActive ? '#ffffff' : isPast ? '#15803d' : '#475569',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap'
+                    padding: '12px 14px',
+                    background: n.type === 'DEFICIENCY_ALERT' ? '#fffbeb' : '#f8fafc',
+                    border: `1px solid ${n.type === 'DEFICIENCY_ALERT' ? '#fde68a' : '#e2e8f0'}`,
+                    borderRadius: '6px'
                   }}
                 >
-                  {isPast ? '✓ ' : ''}{stepName}
-                </div>
-              );
-            })}
-          </div>
-
-          {createdSuccessId && (
-            <div style={{ background: '#dcfce7', border: '1px solid #bbf7d0', color: '#15803d', padding: '16px', borderRadius: '8px', marginBottom: '20px' }}>
-              <h4 style={{ margin: '0 0 6px 0', fontSize: '14px', fontWeight: '700' }}>
-                🎉 Application Successfully Created: {createdSuccessId}
-              </h4>
-              <p style={{ margin: '0 0 12px 0', fontSize: '12.5px' }}>
-                Your proposal has entered Stage 2 (Automated 5-Agent Scrutiny Pipeline). You can now track verification and upload evidence in Document Center.
-              </p>
-              <button
-                onClick={() => onSelectApp(createdSuccessId)}
-                style={{ background: '#15803d', color: '#ffffff', border: 'none', borderRadius: '4px', padding: '6px 14px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}
-              >
-                Open Submitted Dossier
-              </button>
-            </div>
-          )}
-
-          {/* Step 1: Category */}
-          {wizardStep === 1 && (
-            <div>
-              <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#1e3a8a', marginBottom: '14px' }}>
-                Step 1: Select Application Category
-              </h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px' }}>
-                {[
-                  { title: 'Extension of Approval (EoA)', desc: 'Continuation of existing approved technical courses for Academic Year 2026-27' },
-                  { title: 'Increase in Intake / Additional Course', desc: 'Addition of emergent domains (AI, ML, Data Science) or seat intake expansion' },
-                  { title: 'Setup New Technical Institution', desc: 'Fresh establishment of Engineering, Polytechnic or Management institute' },
-                  { title: 'Closure / Reduction of Intake', desc: 'Voluntary reduction of unviable courses or campus restructuring' }
-                ].map(cat => (
-                  <div
-                    key={cat.title}
-                    onClick={() => setAppForm({ ...appForm, category: cat.title })}
-                    style={{
-                      border: appForm.category === cat.title ? '2px solid #1e3a8a' : '1px solid #e2e8f0',
-                      background: appForm.category === cat.title ? '#eff6ff' : '#ffffff',
-                      borderRadius: '8px',
-                      padding: '16px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <div style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a', marginBottom: '4px' }}>
-                      {cat.title}
-                    </div>
-                    <div style={{ fontSize: '12px', color: '#64748b' }}>
-                      {cat.desc}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div style={{ marginTop: '20px', textAlign: 'right' }}>
-                <button
-                  onClick={() => setWizardStep(2)}
-                  style={{ background: '#1e3a8a', color: '#ffffff', border: 'none', borderRadius: '6px', padding: '8px 18px', fontSize: '12.5px', fontWeight: '600', cursor: 'pointer' }}
-                >
-                  Continue to Step 2 →
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Step 2: Academic Year & Institution */}
-          {wizardStep === 2 && (
-            <div>
-              <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#1e3a8a', marginBottom: '14px' }}>
-                Step 2: Academic Year &amp; Institution Particulars
-              </h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>Academic Year</label>
-                  <input type="text" value={appForm.academic_year} disabled style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #e2e8f0', background: '#f8fafc', borderRadius: '6px' }} />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>Institution Name</label>
-                  <input type="text" value={appForm.institution_name} onChange={e => setAppForm({ ...appForm, institution_name: e.target.value })} style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #cbd5e1', borderRadius: '6px' }} />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>Discipline / Type</label>
-                  <select value={appForm.institution_type} onChange={e => setAppForm({ ...appForm, institution_type: e.target.value })} style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #cbd5e1', borderRadius: '6px' }}>
-                    <option value="Engineering">Engineering &amp; Technology</option>
-                    <option value="Management">Management (MBA/PGDM)</option>
-                    <option value="Polytechnic">Polytechnic</option>
-                    <option value="Pharmacy">Pharmacy</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>Regional Jurisdiction</label>
-                  <select value={appForm.region} onChange={e => setAppForm({ ...appForm, region: e.target.value })} style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #cbd5e1', borderRadius: '6px' }}>
-                    <option value="Western">Western Regional Office (Mumbai)</option>
-                    <option value="Northern">Northern Regional Office (Kanpur)</option>
-                    <option value="Southern">Southern Regional Office (Chennai)</option>
-                    <option value="South-Western">South-Western Regional Office (Bengaluru)</option>
-                    <option value="Central">Central Regional Office (Bhopal)</option>
-                  </select>
-                </div>
-              </div>
-              <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'space-between' }}>
-                <button onClick={() => setWizardStep(1)} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px 18px', fontSize: '12.5px', cursor: 'pointer' }}>← Back</button>
-                <button onClick={() => setWizardStep(3)} style={{ background: '#1e3a8a', color: '#ffffff', border: 'none', borderRadius: '6px', padding: '8px 18px', fontSize: '12.5px', fontWeight: '600', cursor: 'pointer' }}>Continue to Step 3 →</button>
-              </div>
-            </div>
-          )}
-
-          {/* Step 3: Campus Details */}
-          {wizardStep === 3 && (
-            <div>
-              <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#1e3a8a', marginBottom: '14px' }}>Step 3: Campus &amp; Location Details</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>State</label>
-                  <input type="text" value={appForm.state} onChange={e => setAppForm({ ...appForm, state: e.target.value })} style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #cbd5e1', borderRadius: '6px' }} />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>City / Town</label>
-                  <input type="text" value={appForm.city} onChange={e => setAppForm({ ...appForm, city: e.target.value })} style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #cbd5e1', borderRadius: '6px' }} />
-                </div>
-                <div style={{ gridColumn: 'span 2' }}>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>Scope of Approval Requested</label>
-                  <textarea rows={3} value={appForm.applied_for} onChange={e => setAppForm({ ...appForm, applied_for: e.target.value })} style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #cbd5e1', borderRadius: '6px' }} />
-                </div>
-              </div>
-              <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'space-between' }}>
-                <button onClick={() => setWizardStep(2)} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px 18px', fontSize: '12.5px', cursor: 'pointer' }}>← Back</button>
-                <button onClick={() => setWizardStep(4)} style={{ background: '#1e3a8a', color: '#ffffff', border: 'none', borderRadius: '6px', padding: '8px 18px', fontSize: '12.5px', fontWeight: '600', cursor: 'pointer' }}>Continue to Step 4 →</button>
-              </div>
-            </div>
-          )}
-
-          {/* Step 4: Programs & Intake */}
-          {wizardStep === 4 && (
-            <div>
-              <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#1e3a8a', marginBottom: '14px' }}>Step 4: Proposed Programs &amp; Approved Intake</h3>
-              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', marginBottom: '16px' }}>
-                <table style={{ width: '100%', fontSize: '12.5px', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid #cbd5e1', textAlign: 'left', color: '#475569' }}>
-                      <th style={{ padding: '6px' }}>Program / Level</th>
-                      <th style={{ padding: '6px' }}>Course Title</th>
-                      <th style={{ padding: '6px' }}>Existing Intake</th>
-                      <th style={{ padding: '6px' }}>Requested Intake</th>
-                      <th style={{ padding: '6px' }}>Affiliation Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '8px 6px' }}>UG / B.Tech</td>
-                      <td style={{ padding: '8px 6px', fontWeight: '600' }}>Computer Science &amp; Engineering</td>
-                      <td style={{ padding: '8px 6px' }}>180 Seats</td>
-                      <td style={{ padding: '8px 6px' }}>180 Seats (EoA)</td>
-                      <td style={{ padding: '8px 6px', color: '#15803d' }}>Affiliated</td>
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '8px 6px' }}>UG / B.Tech</td>
-                      <td style={{ padding: '8px 6px', fontWeight: '600' }}>Artificial Intelligence &amp; Data Science</td>
-                      <td style={{ padding: '8px 6px' }}>120 Seats</td>
-                      <td style={{ padding: '8px 6px' }}>120 Seats (EoA)</td>
-                      <td style={{ padding: '8px 6px', color: '#15803d' }}>Affiliated</td>
-                    </tr>
-                    <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '8px 6px' }}>PG / M.Tech</td>
-                      <td style={{ padding: '8px 6px', fontWeight: '600' }}>Data Science &amp; Analytics</td>
-                      <td style={{ padding: '8px 6px' }}>0 (New)</td>
-                      <td style={{ padding: '8px 6px', color: '#1e3a8a', fontWeight: '700' }}>+24 Seats</td>
-                      <td style={{ padding: '8px 6px', color: '#0369a1' }}>NOC Attached</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'space-between' }}>
-                <button onClick={() => setWizardStep(3)} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px 18px', fontSize: '12.5px', cursor: 'pointer' }}>← Back</button>
-                <button onClick={() => setWizardStep(5)} style={{ background: '#1e3a8a', color: '#ffffff', border: 'none', borderRadius: '6px', padding: '8px 18px', fontSize: '12.5px', fontWeight: '600', cursor: 'pointer' }}>Continue to Step 5 →</button>
-              </div>
-            </div>
-          )}
-
-          {/* Step 5: Infrastructure & Faculty */}
-          {wizardStep === 5 && (
-            <div>
-              <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#1e3a8a', marginBottom: '14px' }}>Step 5: Faculty, Infrastructure &amp; Facilities</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>Full-time Regular Faculty Count</label>
-                  <input type="text" value={appForm.faculty_count} onChange={e => setAppForm({ ...appForm, faculty_count: e.target.value })} style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #cbd5e1', borderRadius: '6px' }} />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>Total Built-up Instructional Carpet Area</label>
-                  <input type="text" value={appForm.total_carpet_area} onChange={e => setAppForm({ ...appForm, total_carpet_area: e.target.value })} style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #cbd5e1', borderRadius: '6px' }} />
-                </div>
-              </div>
-              <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'space-between' }}>
-                <button onClick={() => setWizardStep(4)} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px 18px', fontSize: '12.5px', cursor: 'pointer' }}>← Back</button>
-                <button onClick={() => setWizardStep(6)} style={{ background: '#1e3a8a', color: '#ffffff', border: 'none', borderRadius: '6px', padding: '8px 18px', fontSize: '12.5px', fontWeight: '600', cursor: 'pointer' }}>Continue to Step 6 →</button>
-              </div>
-            </div>
-          )}
-
-          {/* Step 6: Declarations */}
-          {wizardStep === 6 && (
-            <div>
-              <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#1e3a8a', marginBottom: '14px' }}>Step 6: Statutory Declarations</h3>
-              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', fontSize: '12.5px', lineHeight: '1.6', marginBottom: '16px' }}>
-                <p>1. I hereby solemnly affirm that the information furnished in this proposal is authentic and based on genuine records.</p>
-                <p>2. The institution complies with AICTE Land, Building, Cadre Ratio, and Fire Safety Regulations as prescribed in APH 2026-27.</p>
-                <p>3. Anti-ragging committee and internal complaints committee (ICC) have been duly constituted.</p>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', marginTop: '12px', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={appForm.declaration_accepted} onChange={e => setAppForm({ ...appForm, declaration_accepted: e.target.checked })} />
-                  I accept and confirm all statutory declarations above
-                </label>
-              </div>
-              <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'space-between' }}>
-                <button onClick={() => setWizardStep(5)} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px 18px', fontSize: '12.5px', cursor: 'pointer' }}>← Back</button>
-                <button disabled={!appForm.declaration_accepted} onClick={() => setWizardStep(7)} style={{ background: appForm.declaration_accepted ? '#1e3a8a' : '#cbd5e1', color: '#ffffff', border: 'none', borderRadius: '6px', padding: '8px 18px', fontSize: '12.5px', fontWeight: '600', cursor: 'pointer' }}>Continue to Step 7 →</button>
-              </div>
-            </div>
-          )}
-
-          {/* Step 7: Required Document Checklist */}
-          {wizardStep === 7 && (
-            <div>
-              <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#1e3a8a', marginBottom: '14px' }}>Step 7: Required Document Checklist Verification</h3>
-              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', marginBottom: '16px' }}>
-                <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '10px' }}>Documents required by AICTE Approval Process Handbook (upload can also be done in Document Center):</div>
-                <ul style={{ fontSize: '12.5px', listStyle: 'none', padding: 0 }}>
-                  <li style={{ padding: '6px 0', borderBottom: '1px solid #e2e8f0' }}>📁 <strong>Land Ownership Title Deed:</strong> Registered non-encumbered contiguous land parcel</li>
-                  <li style={{ padding: '6px 0', borderBottom: '1px solid #e2e8f0' }}>🚒 <strong>Fire Safety NOC:</strong> Issued by State Fire Services Directorate</li>
-                  <li style={{ padding: '6px 0', borderBottom: '1px solid #e2e8f0' }}>🏛️ <strong>Approved Building Layout Plan:</strong> Approved by competent Municipal / Town Planning authority</li>
-                  <li style={{ padding: '6px 0', borderBottom: '1px solid #e2e8f0' }}>👥 <strong>Faculty Cadre &amp; Qualification Register:</strong> Verified against 1:20 SFR norms</li>
-                  <li style={{ padding: '6px 0' }}>💰 <strong>Endowment Joint FDR Receipt:</strong> Created in name of AICTE and Society</li>
-                </ul>
-              </div>
-              <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'space-between' }}>
-                <button onClick={() => setWizardStep(6)} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px 18px', fontSize: '12.5px', cursor: 'pointer' }}>← Back</button>
-                <button onClick={() => setWizardStep(8)} style={{ background: '#1e3a8a', color: '#ffffff', border: 'none', borderRadius: '6px', padding: '8px 18px', fontSize: '12.5px', fontWeight: '600', cursor: 'pointer' }}>Final Review &amp; Submit →</button>
-              </div>
-            </div>
-          )}
-
-          {/* Step 8: Final Review & Submit */}
-          {wizardStep === 8 && (
-            <div>
-              <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#1e3a8a', marginBottom: '14px' }}>Step 8: Final Submission to AICTE Scrutiny</h3>
-              <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '16px', marginBottom: '20px', fontSize: '12.5px' }}>
-                <div style={{ fontWeight: '700', color: '#1e3a8a', marginBottom: '6px' }}>Ready for Submission:</div>
-                <div>Category: <strong>{appForm.category}</strong></div>
-                <div>Institution: <strong>{appForm.institution_name}</strong></div>
-                <div>Scope: <strong>{appForm.applied_for}</strong></div>
-                <div>Region: <strong>{appForm.region} ({appForm.city}, {appForm.state})</strong></div>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <button onClick={() => setWizardStep(7)} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px 18px', fontSize: '12.5px', cursor: 'pointer' }}>← Back</button>
-                <button onClick={handleCreateSubmit} style={{ background: '#15803d', color: '#ffffff', border: 'none', borderRadius: '6px', padding: '10px 24px', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>
-                  🚀 Submit Application for Scrutiny
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ============================================================
-          5. DOCUMENT CENTER
-          ============================================================ */}
-      {subPage === 'inst-docs' && (
-        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '24px' }}>
-          <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '16px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <h2 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', margin: '0 0 4px 0' }}>
-                📁 Document Center &amp; Evidence Repository
-              </h2>
-              <p style={{ fontSize: '12.5px', color: '#64748b', margin: 0 }}>
-                Upload and version PDF/image files. OCR extraction and integrity hash validation run automatically.
-              </p>
-            </div>
-            {apps.length > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <label style={{ fontSize: '12px', fontWeight: '600', color: '#475569' }}>Dossier:</label>
-                <select
-                  value={selectedAppForDocs}
-                  onChange={e => { setSelectedAppForDocs(e.target.value); loadAppDocs(e.target.value); }}
-                  style={{ padding: '6px 10px', fontSize: '12px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
-                >
-                  {apps.map(a => (
-                    <option key={a.application_id || a.id} value={a.application_id || a.id}>
-                      {a.application_id || a.id} - {a.institution_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
-
-          {/* Upload Form Box */}
-          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '16px', marginBottom: '24px' }}>
-            <h4 style={{ fontSize: '13px', fontWeight: '700', color: '#1e3a8a', margin: '0 0 12px 0' }}>
-              Upload New Document Evidence
-            </h4>
-            {uploadSuccess && (
-              <div style={{ background: '#dcfce7', border: '1px solid #bbf7d0', color: '#15803d', padding: '8px 12px', borderRadius: '6px', marginBottom: '12px', fontSize: '12px' }}>
-                ✓ {uploadSuccess}
-              </div>
-            )}
-            <form onSubmit={handleUploadSubmit} style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <select
-                value={uploadDocType}
-                onChange={e => setUploadDocType(e.target.value)}
-                style={{ padding: '8px 12px', fontSize: '12.5px', border: '1px solid #cbd5e1', borderRadius: '6px', minWidth: '220px' }}
-              >
-                <option value="Land Ownership Deed">Land Ownership Title Deed</option>
-                <option value="Fire Safety NOC">Fire &amp; Life Safety NOC</option>
-                <option value="Approved Building Plan">Approved Building Layout Plan</option>
-                <option value="Faculty List">Faculty Cadre &amp; Qualification Register</option>
-                <option value="FDR Receipt">Joint AICTE-Society FDR Receipt</option>
-                <option value="University Affiliation NOC">University Affiliation NOC</option>
-              </select>
-
-              <input
-                type="file"
-                accept=".pdf,.png,.jpg,.jpeg"
-                onChange={e => setSelectedFile(e.target.files?.[0] || null)}
-                style={{ fontSize: '12px' }}
-                required
-              />
-
-              <button
-                type="submit"
-                style={{
-                  background: '#1e3a8a',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  padding: '8px 16px',
-                  fontSize: '12.5px',
-                  fontWeight: '600',
-                  cursor: 'pointer'
-                }}
-              >
-                📤 Upload &amp; Run OCR
-              </button>
-            </form>
-          </div>
-
-          {/* Document Inventory Table */}
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12.5px' }}>
-            <thead>
-              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>
-                <th style={{ padding: '10px 14px' }}>Document Name</th>
-                <th style={{ padding: '10px 14px' }}>File &amp; Hash</th>
-                <th style={{ padding: '10px 14px' }}>Upload Date</th>
-                <th style={{ padding: '10px 14px' }}>OCR Status</th>
-                <th style={{ padding: '10px 14px' }}>Verification Status</th>
-                <th style={{ padding: '10px 14px', textAlign: 'right' }}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {docsList.length === 0 ? (
-                <tr>
-                  <td colSpan={6} style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>
-                    No documents uploaded for this application yet.
-                  </td>
-                </tr>
-              ) : (
-                docsList.map(d => (
-                  <tr key={d.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '12px 14px', fontWeight: '600', color: '#0f172a' }}>
-                      {d.doc_type}
-                    </td>
-                    <td style={{ padding: '12px 14px', color: '#64748b' }}>
-                      <div>{d.filename}</div>
-                      <div style={{ fontSize: '10.5px', fontFamily: 'monospace', color: '#94a3b8' }}>
-                        {d.sha256_hash ? d.sha256_hash.substring(0, 16) + '...' : 'SHA-256 Validated'}
-                      </div>
-                    </td>
-                    <td style={{ padding: '12px 14px', color: '#64748b' }}>
-                      {d.uploaded_at ? new Date(d.uploaded_at).toLocaleDateString() : 'Recent'}
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <span style={{
-                        padding: '3px 8px',
-                        borderRadius: '4px',
-                        fontSize: '11px',
-                        fontWeight: '600',
-                        background: '#e0f2fe',
-                        color: '#0369a1'
-                      }}>
-                        {d.status === 'flagged' ? '⚠️ Duplicate Flag' : '✓ OCR Extracted'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px 14px' }}>
-                      <span style={{
-                        padding: '3px 8px',
-                        borderRadius: '4px',
-                        fontSize: '11px',
-                        fontWeight: '700',
-                        background: d.status === 'verified' ? '#dcfce7' : d.status === 'flagged' ? '#fee2e2' : '#fef3c7',
-                        color: d.status === 'verified' ? '#15803d' : d.status === 'flagged' ? '#b91c1c' : '#b45309'
-                      }}>
-                        {(d.status || 'Pending').toUpperCase()}
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                      <button
-                        onClick={() => onViewDoc(d.filename)}
-                        style={{
-                          padding: '4px 10px',
-                          fontSize: '11.5px',
-                          background: '#f1f5f9',
-                          border: '1px solid #cbd5e1',
-                          borderRadius: '4px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        👁️ Preview
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* ============================================================
-          6. REQUIREMENTS CHECKLIST
-          ============================================================ */}
-      {subPage === 'inst-checklist' && (
-        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '24px' }}>
-          <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '16px', marginBottom: '20px' }}>
-            <h2 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', margin: '0 0 4px 0' }}>
-              ✅ Mandatory Regulatory Requirements Checklist
-            </h2>
-            <p style={{ fontSize: '12.5px', color: '#64748b', margin: 0 }}>
-              Grouped statutory requirements per AICTE Approval Process Handbook (APH 2026-27).
-            </p>
-          </div>
-
-          {[
-            {
-              category: '1. Land & Campus Infrastructure',
-              items: [
-                { id: 'APH-2.1', title: 'Contiguous Land Parcel', norm: 'Minimum 5.0 Acres in Rural / 2.5 Acres in Urban', status: 'Complete' },
-                { id: 'APH-2.2', title: 'Barrier-Free Divyangjan Accessibility', norm: 'Lifts, ramps, accessible toilets on all floors', status: 'Complete' },
-                { id: 'APH-2.3', title: 'Instructional Carpet Area', norm: 'Prescribed sq.m based on approved division count', status: 'Under verification' }
-              ]
-            },
-            {
-              category: '2. Statutory Safety & Life Protection',
-              items: [
-                { id: 'APH-4.2', title: 'State Fire Safety NOC', norm: 'Valid unexpired NOC from Chief Fire Officer', status: 'Complete' },
-                { id: 'APH-4.3', title: 'Structural Stability Certificate', norm: 'Issued by licensed structural engineer/PWD', status: 'Complete' },
-                { id: 'APH-4.4', title: 'Potable Drinking Water & Sanitary Certificate', norm: 'Municipal health authority inspection certificate', status: 'Complete' }
-              ]
-            },
-            {
-              category: '3. Human Resources & Faculty',
-              items: [
-                { id: 'APH-3.4', title: 'Student-to-Faculty Ratio (SFR)', norm: '1:20 for B.Tech Engineering courses', status: 'Under verification' },
-                { id: 'APH-3.5', title: 'Cadre Ratio (Professor : Associate : Assistant)', norm: '1 : 2 : 6 Cadre distribution', status: 'Needs correction' },
-                { id: 'APH-3.6', title: 'Principal / Director Qualification', norm: 'Ph.D with minimum 15 years experience & API score', status: 'Complete' }
-              ]
-            },
-            {
-              category: '4. Financial & Corpus Deposit',
-              items: [
-                { id: 'APH-6.3', title: 'Joint Endowment FDR', norm: 'Fixed Deposit Receipt created in joint name of AICTE & Society', status: 'Complete' },
-                { id: 'APH-6.4', title: 'Audited Financial Statements', norm: 'Preceding 3 financial years audited balance sheets', status: 'Complete' }
-              ]
-            }
-          ].map(section => (
-            <div key={section.category} style={{ marginBottom: '24px' }}>
-              <h4 style={{ fontSize: '14px', fontWeight: '700', color: '#1e3a8a', marginBottom: '10px', background: '#f8fafc', padding: '8px 12px', borderRadius: '6px' }}>
-                {section.category}
-              </h4>
-              <div style={{ display: 'grid', gap: '8px' }}>
-                {section.items.map(item => (
-                  <div
-                    key={item.id}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      padding: '10px 14px',
-                      border: '1px solid #f1f5f9',
-                      borderRadius: '6px'
-                    }}
-                  >
-                    <div>
-                      <span style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginRight: '8px' }}>{item.id}</span>
-                      <strong style={{ fontSize: '13px', color: '#0f172a' }}>{item.title}</strong>
-                      <div style={{ fontSize: '11.5px', color: '#64748b', marginTop: '2px' }}>{item.norm}</div>
-                    </div>
-                    <span style={{
-                      padding: '3px 9px',
-                      borderRadius: '12px',
-                      fontSize: '11px',
-                      fontWeight: '700',
-                      background:
-                        item.status === 'Complete' ? '#dcfce7' :
-                        item.status === 'Needs correction' ? '#fee2e2' : '#eff6ff',
-                      color:
-                        item.status === 'Complete' ? '#15803d' :
-                        item.status === 'Needs correction' ? '#b91c1c' : '#1d4ed8'
-                    }}>
-                      {item.status}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <span style={{ fontSize: '12.5px', fontWeight: '700', color: '#0f172a' }}>
+                      {n.title}
+                    </span>
+                    <span style={{ fontSize: '11px', color: '#64748b' }}>
+                      {new Date(n.created_at).toLocaleString('en-IN')}
                     </span>
                   </div>
-                ))}
-              </div>
+                  <div style={{ fontSize: '12px', color: '#334155', lineHeight: '1.4' }}>
+                    {n.message}
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
       )}
 
-      {/* ============================================================
-          7. CLARIFICATIONS & DEFICIENCIES
-          ============================================================ */}
-      {subPage === 'inst-deficiencies' && (
-        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '24px' }}>
-          <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '16px', marginBottom: '20px' }}>
-            <h2 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', margin: '0 0 4px 0' }}>
-              ⚠️ Deficiency &amp; Clarification Resolution Desk
-            </h2>
-            <p style={{ fontSize: '12.5px', color: '#64748b', margin: 0 }}>
-              Review discrepancies raised by Verification Officers or Compliance Reviewers, upload corrective evidence, and resubmit for evaluation.
-            </p>
-          </div>
+      {/* Side-by-side Document & OCR Inspection Modal */}
+      {inspectingDoc && (
+        <DocumentOcrModal
+          document={inspectingDoc}
+          findings={selectedApp?.findings || []}
+          applicationId={selectedApp?.application_id || 'APP-2026'}
+          institutionName={profile?.name || user?.full_name || 'Applicant Institution'}
+          isOfficer={false}
+          onClose={() => setInspectingDoc(null)}
+        />
+      )}
 
-          {deficiencyRespSuccess && (
-            <div style={{ background: '#dcfce7', border: '1px solid #bbf7d0', color: '#15803d', padding: '12px 16px', borderRadius: '6px', marginBottom: '16px', fontSize: '12.5px' }}>
-              ✓ {deficiencyRespSuccess}
+      {/* Official AICTE Regulatory Order Modal */}
+      {showOrderModal && selectedApp && (
+        <RegulatoryOrderModal
+          application={selectedApp}
+          onClose={() => setShowOrderModal(false)}
+        />
+      )}
+
+      {/* Official AICTE Certificate of Approval Modal */}
+      {showCertificateModal && (certificateApp || selectedApp) && (
+        <ApprovalCertificateModal
+          application={certificateApp || selectedApp}
+          onClose={() => {
+            setShowCertificateModal(false);
+            setCertificateApp(null);
+          }}
+        />
+      )}
+
+      {/* Institution Clarification Response Modal */}
+      {showClarificationModal && selectedApp && (
+        <div className="modal-overlay" onClick={() => setShowClarificationModal(false)}>
+          <div className="modal-card" style={{ maxWidth: '600px' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Furnish Statutory Clarification</h3>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => setShowClarificationModal(false)}
+                style={{ padding: '4px 8px' }}
+              >
+                ✕
+              </button>
             </div>
-          )}
 
-          {/* Active Deficiencies */}
-          <div style={{ marginBottom: '24px' }}>
-            {deficiencies.length === 0 ? (
-              <div style={{ padding: '32px', textAlign: 'center', background: '#f8fafc', borderRadius: '8px', color: '#64748b' }}>
-                🎉 No active deficiencies! All institutional checks are compliant or under standard review.
-              </div>
-            ) : (
-              <div style={{ display: 'grid', gap: '14px' }}>
-                {deficiencies.map(f => (
-                  <div
-                    key={f.id}
-                    style={{
-                      border: '1px solid #fecaca',
-                      background: '#fffbfb',
-                      borderRadius: '8px',
-                      padding: '16px'
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                      <div>
-                        <span style={{ background: '#fee2e2', color: '#b91c1c', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '700', marginRight: '8px' }}>
-                          SEVERITY: {f.severity?.toUpperCase()}
-                        </span>
-                        <strong style={{ fontSize: '13.5px', color: '#0f172a' }}>
-                          {f.rule_description || f.rule_id || 'Discrepancy Notice'}
-                        </strong>
-                      </div>
-                      <span style={{ fontSize: '11px', color: '#64748b' }}>
-                        Issued on: {new Date(f.created_at).toLocaleDateString()}
-                      </span>
-                    </div>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '14px' }}>
+              Submit your formal institutional explanation in response to the regulatory officer query for Application #{selectedApp.application_id}.
+            </div>
 
-                    <p style={{ fontSize: '12.5px', color: '#334155', margin: '0 0 10px 0', lineHeight: '1.5' }}>
-                      {f.finding_text}
-                    </p>
-
-                    {f.officer_remark && (
-                      <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '8px 12px', fontSize: '12px', color: '#1e3a8a', marginBottom: '12px' }}>
-                        <strong>Officer Instruction:</strong> {f.officer_remark}
-                      </div>
-                    )}
-
-                    <button
-                      onClick={() => setRespondingTo(f)}
-                      style={{
-                        background: '#1e3a8a',
-                        color: '#ffffff',
-                        border: 'none',
-                        borderRadius: '4px',
-                        padding: '6px 14px',
-                        fontSize: '12px',
-                        fontWeight: '600',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Respond &amp; Upload Corrective Evidence
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Response Modal / Drawer */}
-          {respondingTo && (
             <div style={{
-              background: '#f8fafc',
-              border: '2px solid #1e3a8a',
-              borderRadius: '8px',
-              padding: '20px',
-              marginTop: '20px'
+              padding: '12px',
+              background: '#fff7ed',
+              border: '1px solid #fed7aa',
+              borderRadius: '6px',
+              marginBottom: '16px',
+              fontSize: '12px',
+              color: '#7c2d12'
             }}>
-              <h3 style={{ fontSize: '14px', fontWeight: '700', color: '#1e3a8a', margin: '0 0 10px 0' }}>
-                Responding to Deficiency: {respondingTo.rule_id}
-              </h3>
-              <form onSubmit={handleDeficiencySubmit}>
-                <div style={{ marginBottom: '12px' }}>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>
-                    Institutional Clarification / Statement *
-                  </label>
-                  <textarea
-                    rows={4}
-                    value={deficiencyResponseText}
-                    onChange={e => setDeficiencyResponseText(e.target.value)}
-                    placeholder="Explain how the deficiency has been rectified and describe the uploaded corrective document..."
-                    style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #cbd5e1', borderRadius: '6px' }}
-                    required
-                  />
-                </div>
-
-                <div style={{ marginBottom: '16px' }}>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>
-                    Attach Replacement Document Evidence
-                  </label>
-                  <input type="file" accept=".pdf,.png,.jpg" style={{ fontSize: '12px' }} />
-                </div>
-
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    type="submit"
-                    style={{
-                      background: '#15803d',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: '6px',
-                      padding: '8px 18px',
-                      fontSize: '12.5px',
-                      fontWeight: '600',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Submit Response &amp; Resubmit to Scrutiny
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRespondingTo(null)}
-                    style={{
-                      background: '#f1f5f9',
-                      border: '1px solid #cbd5e1',
-                      borderRadius: '6px',
-                      padding: '8px 14px',
-                      fontSize: '12.5px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
+              <strong>Officer Query:</strong> {selectedApp.verification_remarks ||
+                selectedApp.review_actions?.find(a => a.action_type === 'CLARIFICATION_REQUESTED')?.comments ||
+                'Clarification requested regarding uploaded documentation.'}
             </div>
-          )}
-        </div>
-      )}
 
-      {/* ============================================================
-          8. NOTIFICATIONS
-          ============================================================ */}
-      {subPage === 'inst-notifications' && (
-        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '24px' }}>
-          <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '16px', marginBottom: '20px' }}>
-            <h2 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', margin: '0 0 4px 0' }}>
-              🔔 Regulatory Notifications &amp; Alerts
-            </h2>
-            <p style={{ fontSize: '12.5px', color: '#64748b', margin: 0 }}>
-              Chronological feed of status changes, officer assignments, and statutory deadlines.
-            </p>
-          </div>
+            <div className="form-group">
+              <label className="form-label">Official Clarification Statement:</label>
+              <textarea
+                className="form-control"
+                placeholder="Enter detailed institutional explanation addressing the officer's specific query..."
+                rows={5}
+                value={clarificationReplyText}
+                onChange={e => setClarificationReplyText(e.target.value)}
+                style={{ fontSize: '12.5px', minHeight: '110px' }}
+              />
+            </div>
 
-          <div style={{ display: 'grid', gap: '12px' }}>
-            {[
-              {
-                title: 'AICTE APH 2026-27 Application Intake Active',
-                desc: 'Portal is accepting EoA and New Course applications for the upcoming academic cycle.',
-                date: 'Oct 28, 2026',
-                type: 'info'
-              },
-              {
-                title: 'Document Intelligence OCR Completed',
-                desc: 'Automatic field extraction completed for uploaded Land Deed and Building Layout.',
-                date: 'Oct 27, 2026',
-                type: 'success'
-              },
-              {
-                title: 'Verification Officer Assigned',
-                desc: 'Dossier routed to authorized officer for human-in-the-loop certificate inspection.',
-                date: 'Oct 26, 2026',
-                type: 'info'
-              }
-            ].map((n, idx) => (
-              <div
-                key={idx}
-                style={{
-                  padding: '14px 18px',
-                  borderRadius: '8px',
-                  border: '1px solid #e2e8f0',
-                  background: '#f8fafc',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => setShowClarificationModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={!clarificationReplyText.trim() || submittingClarification}
+                onClick={async () => {
+                  setSubmittingClarification(true);
+                  try {
+                    const updated = await submitClarification(selectedApp.application_id, clarificationReplyText);
+                    setSelectedApp(updated);
+                    setShowClarificationModal(false);
+                    setClarificationReplyText('');
+                    setActionNotice('✓ Clarification response submitted successfully. Dossier returned to officer scrutiny.');
+                    loadData();
+                    setTimeout(() => setActionNotice(''), 5000);
+                  } catch (e: any) {
+                    alert(e?.response?.data?.detail || 'Failed to submit clarification.');
+                  } finally {
+                    setSubmittingClarification(false);
+                  }
                 }}
               >
-                <div>
-                  <div style={{ fontSize: '13.5px', fontWeight: '700', color: '#0f172a', marginBottom: '2px' }}>
-                    {n.title}
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#64748b' }}>
-                    {n.desc}
-                  </div>
-                </div>
-                <span style={{ fontSize: '11px', color: '#94a3b8', whiteSpace: 'nowrap' }}>
-                  {n.date}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================
-          9. APPLICATION TIMELINE
-          ============================================================ */}
-      {subPage === 'inst-timeline' && (
-        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '24px' }}>
-          <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '16px', marginBottom: '20px' }}>
-            <h2 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', margin: '0 0 4px 0' }}>
-              ⏱️ End-to-End Application Workflow Timeline
-            </h2>
-            <p style={{ fontSize: '12.5px', color: '#64748b', margin: 0 }}>
-              Traceable milestone chronology reflecting actual backend events and authorized human interventions.
-            </p>
-          </div>
-
-          {timelineData && (
-            <div style={{ marginBottom: '20px', background: '#eff6ff', padding: '12px 16px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between' }}>
-              <div>
-                <strong>Application:</strong> {timelineData.application_id} ({timelineData.institution_name})
-              </div>
-              <div>
-                <strong>Current Stage:</strong> {timelineData.current_stage.toUpperCase()} | <strong>Score:</strong> {timelineData.scrutiny_score}%
-              </div>
-            </div>
-          )}
-
-          <div style={{ display: 'grid', gap: '16px', position: 'relative' }}>
-            {[
-              { step: 1, title: 'Draft Created', desc: 'Institution initiates application and prepares institutional details', done: true, date: 'Oct 26, 2026' },
-              { step: 2, title: 'Application Submitted', desc: 'Final declarations confirmed and uploaded evidence locked for review', done: true, date: 'Oct 26, 2026' },
-              { step: 3, title: 'AI 5-Agent Validation Pipeline', desc: 'OCR extraction, tamper check, public issuer registry & APH rule matching', done: true, date: 'Oct 27, 2026' },
-              { step: 4, title: 'Verification Officer Review', desc: 'Split-screen human inspection of certificates, OCR correction & anomaly audit', done: true, date: 'Oct 28, 2026' },
-              { step: 5, title: 'Compliance Reviewer Scrutiny', desc: 'Regulatory checklist evaluation, infrastructure assessment & recommendation', done: false, date: 'In Progress' },
-              { step: 6, title: 'Statutory AICTE Decision Pending', desc: 'Directorate reviews complete evidence dossier for official decree issuance', done: false, date: 'Pending' },
-              { step: 7, title: 'Official Order Signed & Recorded', desc: 'Immutable decree issued (CLEARED / DEFICIENCY / REJECTED) with order number', done: false, date: 'Pending' }
-            ].map(stage => (
-              <div
-                key={stage.step}
-                style={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: '16px',
-                  padding: '14px 18px',
-                  borderRadius: '8px',
-                  border: stage.done ? '1px solid #bbf7d0' : '1px solid #e2e8f0',
-                  background: stage.done ? '#f0fdf4' : '#ffffff'
-                }}
-              >
-                <div style={{
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '50%',
-                  background: stage.done ? '#15803d' : '#e2e8f0',
-                  color: stage.done ? '#ffffff' : '#64748b',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontWeight: '700',
-                  fontSize: '13px'
-                }}>
-                  {stage.done ? '✓' : stage.step}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: stage.done ? '#15803d' : '#0f172a' }}>
-                      {stage.title}
-                    </h4>
-                    <span style={{ fontSize: '11px', color: '#64748b' }}>{stage.date}</span>
-                  </div>
-                  <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#64748b' }}>
-                    {stage.desc}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================
-          10. MY ACCOUNT
-          ============================================================ */}
-      {subPage === 'inst-account' && (
-        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '24px' }}>
-          <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '16px', marginBottom: '20px' }}>
-            <h2 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', margin: '0 0 4px 0' }}>
-              👤 Institution Representative Account
-            </h2>
-            <p style={{ fontSize: '12.5px', color: '#64748b', margin: 0 }}>
-              Authorized user credentials, contact parameters, and security session info.
-            </p>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', maxWidth: '640px' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>
-                Full Name
-              </label>
-              <input type="text" value={user?.full_name || 'Institution Applicant'} disabled style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #e2e8f0', background: '#f8fafc', borderRadius: '6px' }} />
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>
-                Login Email
-              </label>
-              <input type="text" value={user?.email || 'institution@example.com'} disabled style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #e2e8f0', background: '#f8fafc', borderRadius: '6px' }} />
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>
-                System Role
-              </label>
-              <input type="text" value="INSTITUTION_USER" disabled style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #e2e8f0', background: '#f8fafc', borderRadius: '6px' }} />
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '4px' }}>
-                Security Scope
-              </label>
-              <input type="text" value="Restricted to Own Submissions" disabled style={{ width: '100%', padding: '8px 12px', fontSize: '12.5px', border: '1px solid #e2e8f0', background: '#f8fafc', borderRadius: '6px' }} />
+                {submittingClarification ? 'Submitting...' : 'Submit Official Reply'}
+              </button>
             </div>
           </div>
         </div>
@@ -1769,3 +1590,4 @@ export default function InstitutionViews({ subPage, onNavigate, onSelectApp, onV
     </div>
   );
 }
+

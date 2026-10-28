@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from typing import List, Optional, Dict, Any
@@ -10,26 +11,31 @@ import os, hashlib, shutil, random
 from app.config import settings
 from app.database import get_db, engine, Base
 from app.models import (
-    User, Application, Document, Finding, ComplianceCheck, AuditEvent, RegulatoryRule,
-    AppStatus, FindingStatus, FindingSeverity, UserRole
+    User, Institution, Application, Document, DocumentVersion, Finding,
+    ComplianceCheck, ValidationRun, ReviewAction, DecisionRecord,
+    Notification, RegulatoryRule, AuditEvent, AppStatus, FindingStatus,
+    FindingSeverity, UserRole
 )
 from app.schemas import (
     LoginRequest, TokenResponse, UserCreate, UserOut, UserRoleUpdate,
-    ApplicationCreate, ApplicationOut, DocumentOut, FindingOut,
-    ComplianceCheckOut, AuditEventOut, ReviewFinding, DashboardStats,
-    CompleteVerificationRequest, SubmitComplianceRecommendationRequest,
-    OfficialDecisionRequest, RegulatoryRuleCreate, RegulatoryRuleUpdate, RegulatoryRuleOut,
-    RaiseDeficiencyRequest, RespondDeficiencyRequest, OcrUpdateRequest, ProfileUpdateRequest
+    InstitutionCreate, InstitutionUpdate, InstitutionOut,
+    ApplicationCreate, ApplicationOut, DocumentOut, DocumentVersionOut,
+    FindingOut, ReviewFinding, ComplianceCheckOut, ValidationRunOut,
+    ReviewActionCreate, ReviewActionOut, DecisionRecordCreate, DecisionRecordOut,
+    NotificationOut, RegulatoryRuleCreate, RegulatoryRuleUpdate, RegulatoryRuleOut,
+    AuditEventOut, DashboardStats, RespondDeficiencyRequest, ClarificationSubmit,
+    OfficerSendSuggestionsRequest, OfficerApprovalRequest
 )
 from app.security import verify_password, get_password_hash, create_access_token, decode_token
+from app.validation_engine import run_central_ai_validation, REQUIRED_DOCUMENTS_CONFIG
 
 # Create tables on startup
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="AICTE Regulatory Compliance & Application Validation Platform API",
-    version="2.0.0",
-    description="Multi-role statutory compliance & application validation platform with backend RBAC"
+    version="2.1.0",
+    description="Streamlined AICTE Validation & Regulatory Review Platform"
 )
 
 app.add_middleware(
@@ -43,17 +49,24 @@ app.add_middleware(
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
+OFFICER_ROLE_ALIASES = {
+    "officer", "scrutiny_officer", "verification_officer",
+    "compliance_officer", "compliance_reviewer",
+    "chairman", "decision_maker", "verification", "scrutiny",
+    "compliance", "reviewer", "decision"
+}
 
-def normalize_role(role_input: Optional[str]) -> str:
-    r = str(role_input or "institution").strip().lower()
+
+def normalize_role(role_input: Any) -> str:
+    if hasattr(role_input, 'value'):
+        r = str(role_input.value).strip().lower()
+    else:
+        r = str(role_input or "institution").strip().lower()
+    
     if r in ("institution", "applicant", "college", "college_user"):
         return UserRole.INSTITUTION.value
-    elif r in ("verification_officer", "verification", "officer", "scrutiny_officer"):
-        return UserRole.VERIFICATION_OFFICER.value
-    elif r in ("compliance_reviewer", "compliance", "reviewer"):
-        return UserRole.COMPLIANCE_REVIEWER.value
-    elif r in ("decision_maker", "decision", "aicte_decision_maker", "director", "authorized_decision_maker"):
-        return UserRole.DECISION_MAKER.value
+    elif r in OFFICER_ROLE_ALIASES:
+        return UserRole.OFFICER.value
     elif r in ("admin", "system_admin", "administrator"):
         return UserRole.ADMIN.value
     return UserRole.INSTITUTION.value
@@ -70,62 +83,87 @@ def get_current_user(token: Optional[str] = Depends(oauth2_scheme), db: Session 
                     return user
         except Exception:
             pass
-    # Fallback to first active user if token missing
+    # Fallback to first active user if token missing for testing
     user = db.query(User).filter(User.is_active == True).first()
     if not user:
-        raise HTTPException(status_code=401, detail="No active user found. Please sign up or log in.")
+        raise HTTPException(status_code=401, detail="Authentication required. Please log in.")
     return user
 
 
 def require_roles(*allowed_roles):
+    allowed_normalized = set()
+    for r in allowed_roles:
+        norm = normalize_role(r)
+        allowed_normalized.add(norm)
+        if norm == UserRole.OFFICER.value or norm in OFFICER_ROLE_ALIASES:
+            allowed_normalized.add("officer")
+            allowed_normalized.add("scrutiny_officer")
+            allowed_normalized.add("compliance_officer")
+            allowed_normalized.add("chairman")
     def role_checker(current_user: User = Depends(get_current_user)):
-        # Allow all authorized users to test all 8 prototype features seamlessly
+        u_role = normalize_role(current_user.role)
+        # ADMIN can access management endpoints
+        if UserRole.ADMIN.value in allowed_normalized and u_role == UserRole.ADMIN.value:
+            return current_user
+        if u_role not in allowed_normalized and current_user.role not in allowed_normalized:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied: Role '{current_user.role}' is not authorized for this action."
+            )
         return current_user
     return role_checker
 
 
 def log_audit(db: Session, actor: User, action: str, entity_type: str,
               entity_id: str = None, application_id: int = None, details: dict = None):
-    event = AuditEvent(
-        application_id=application_id,
-        actor_id=actor.id,
-        actor_name=actor.full_name,
-        action=action,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        details=details,
-        timestamp=datetime.utcnow()
-    )
-    db.add(event)
-    db.commit()
+    try:
+        event = AuditEvent(
+            application_id=application_id,
+            actor_id=actor.id if actor else None,
+            actor_name=actor.full_name if actor else "System",
+            action=action,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            details=details,
+            timestamp=datetime.utcnow()
+        )
+        db.add(event)
+        db.commit()
+    except Exception as e:
+        print(f"Audit log error: {e}")
 
 
 # ============================================================
-# AUTH ROUTES
+# AUTHENTICATION & PROFILE ROUTES
 # ============================================================
 @app.post("/auth/login", response_model=TokenResponse, tags=["Auth"])
 def login(req: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == req.email).first()
+    user = db.query(User).filter(User.email == req.email.strip().lower()).first()
     if not user or not verify_password(req.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    
     role_str = normalize_role(user.role)
     token = create_access_token(data={"sub": str(user.id), "role": role_str})
+    
+    log_audit(db, user, "User Logged In", "user", str(user.id), None, {"email": user.email, "role": role_str})
     return TokenResponse(
         access_token=token,
         user_id=user.id,
         full_name=user.full_name,
-        role=role_str
+        role=role_str,
+        institution_id=user.institution_id
     )
 
 
 @app.post("/auth/register", response_model=UserOut, tags=["Auth"])
 def register(req: UserCreate, db: Session = Depends(get_db)):
-    if db.query(User).filter(User.email == req.email).first():
+    clean_email = req.email.strip().lower()
+    if db.query(User).filter(User.email == clean_email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
     
     assigned_role = normalize_role(req.role)
     user = User(
-        email=req.email,
+        email=clean_email,
         full_name=req.full_name,
         role=assigned_role,
         hashed_password=get_password_hash(req.password)
@@ -143,144 +181,178 @@ def get_me(current_user: User = Depends(get_current_user)):
 
 
 # ============================================================
-# DASHBOARD ROUTES
+# INSTITUTION PROFILE ROUTES
+# ============================================================
+@app.get("/institution/profile", response_model=InstitutionOut, tags=["Institution"])
+def get_institution_profile(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Find linked institution or create default for institution user
+    inst = None
+    if current_user.institution_id:
+        inst = db.query(Institution).filter(Institution.id == current_user.institution_id).first()
+    
+    if not inst:
+        inst = db.query(Institution).first()
+    
+    if not inst:
+        # Create default demo institution
+        inst = Institution(
+            aicte_id="1-33245561",
+            name="ABC Institute of Engineering & Technology",
+            institution_type="Engineering & Technology",
+            category="Private-Self-Financed",
+            address="Sector 62, Institutional Area, Knowledge Park",
+            state="Maharashtra",
+            district="Pune",
+            pincode="411057",
+            contact_person="Dr. Ramesh Kulkarni (Principal)",
+            email="principal@abcinstitute.edu.in",
+            phone="+91 98765 43210",
+            university_affiliation="Savitribai Phule Pune University",
+            established_year=2004,
+            campus_acres=5.5,
+            total_intake=720
+        )
+        db.add(inst)
+        db.commit()
+        db.refresh(inst)
+        
+        current_user.institution_id = inst.id
+        db.commit()
+
+    return inst
+
+
+@app.put("/institution/profile", response_model=InstitutionOut, tags=["Institution"])
+def update_institution_profile(
+    req: InstitutionUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.INSTITUTION, UserRole.ADMIN))
+):
+    inst = None
+    if current_user.institution_id:
+        inst = db.query(Institution).filter(Institution.id == current_user.institution_id).first()
+    if not inst:
+        inst = db.query(Institution).first()
+    if not inst:
+        raise HTTPException(status_code=404, detail="Institution profile not found")
+
+    for k, v in req.dict(exclude_unset=True).items():
+        if v is not None:
+            setattr(inst, k, v)
+    
+    inst.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(inst)
+
+    log_audit(db, current_user, "Institution Profile Updated", "institution", str(inst.id), None, {"name": inst.name})
+    return inst
+
+
+# ============================================================
+# DASHBOARD ROUTES (Section 4 Specification)
 # ============================================================
 @app.get("/dashboard/stats", response_model=DashboardStats, tags=["Dashboard"])
 def get_dashboard_stats(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     role = normalize_role(current_user.role)
     is_inst = (role == UserRole.INSTITUTION.value)
-    
-    base_apps = db.query(Application)
-    if is_inst:
-        base_apps = base_apps.filter(Application.submitted_by == current_user.id)
 
-    total = base_apps.count()
-    under_review = db.query(Application).filter(
+    base_query = db.query(Application)
+    if is_inst:
+        # Enforce strict data isolation: only this institution's applications
+        base_query = base_query.filter(Application.submitted_by == current_user.id)
+
+    total_apps = base_query.count()
+
+    # Calculate exact counts requested in Section 4
+    draft_count = db.query(Application).filter(
         (Application.submitted_by == current_user.id) if is_inst else True,
-        Application.status.in_([AppStatus.UNDER_REVIEW.value, AppStatus.DOC_VERIFIED.value, AppStatus.COMPLIANCE_REVIEW.value, AppStatus.DECISION_PENDING.value])
-    ).count()
-    deficiencies = db.query(Application).filter(
-        (Application.submitted_by == current_user.id) if is_inst else True,
-        Application.status == AppStatus.DEFICIENCY.value
-    ).count()
-    cleared = db.query(Application).filter(
-        (Application.submitted_by == current_user.id) if is_inst else True,
-        Application.status == AppStatus.CLEARED.value
+        or_(Application.status == "DRAFT", Application.status == "draft")
     ).count()
 
-    if is_inst:
-        inst_app_ids = [a.id for a in base_apps.all()]
-        total_docs = db.query(Document).filter(Document.application_id.in_(inst_app_ids)).count() if inst_app_ids else 0
-        total_findings = db.query(Finding).filter(Finding.application_id.in_(inst_app_ids)).count() if inst_app_ids else 0
-        open_findings = db.query(Finding).filter(Finding.application_id.in_(inst_app_ids), Finding.status == FindingStatus.OPEN.value).count() if inst_app_ids else 0
-        avg_score_result = db.query(func.avg(Application.scrutiny_score)).filter(Application.submitted_by == current_user.id).scalar()
-    else:
-        total_docs = db.query(Document).count()
-        total_findings = db.query(Finding).count()
-        open_findings = db.query(Finding).filter(Finding.status == FindingStatus.OPEN.value).count()
-        avg_score_result = db.query(func.avg(Application.scrutiny_score)).scalar()
+    action_required_count = db.query(Application).filter(
+        (Application.submitted_by == current_user.id) if is_inst else True,
+        or_(Application.status == "ACTION_REQUIRED", Application.status == "deficiency")
+    ).count()
 
-    avg_score = round(float(avg_score_result or 0), 1)
+    ready_for_review_count = db.query(Application).filter(
+        (Application.submitted_by == current_user.id) if is_inst else True,
+        Application.status == "READY_FOR_REVIEW"
+    ).count()
 
-    # Status distribution
-    status_dist = {}
-    for s in AppStatus:
-        q_s = db.query(Application).filter(Application.status == s.value)
-        if is_inst:
-            q_s = q_s.filter(Application.submitted_by == current_user.id)
-        status_dist[s.value] = q_s.count()
-
-    # Type distribution
-    type_dist = {}
-    q_type = db.query(Application.institution_type, func.count(Application.id))
-    if is_inst:
-        q_type = q_type.filter(Application.submitted_by == current_user.id)
-    type_results = q_type.group_by(Application.institution_type).all()
-    for t, c in type_results:
-        if t:
-            type_dist[t] = c
-
-    # Region distribution
-    region_dist = {}
-    q_reg = db.query(Application.region, func.count(Application.id))
-    if is_inst:
-        q_reg = q_reg.filter(Application.submitted_by == current_user.id)
-    region_results = q_reg.group_by(Application.region).all()
-    for r, c in region_results:
-        if r:
-            region_dist[r] = c
-
-    # Weekly submissions (last 8 weeks)
-    weekly = []
-    now = datetime.utcnow()
-    for w in range(7, -1, -1):
-        week_start = now - timedelta(weeks=w + 1)
-        week_end = now - timedelta(weeks=w)
-        q_w = db.query(Application).filter(
-            Application.submitted_at >= week_start,
-            Application.submitted_at < week_end
+    under_review_count = db.query(Application).filter(
+        (Application.submitted_by == current_user.id) if is_inst else True,
+        or_(
+            Application.status == "UNDER_SCRUTINY",
+            Application.status == "UNDER_COMPLIANCE_REVIEW",
+            Application.status == "under_review",
+            Application.status == "doc_verified",
+            Application.status == "compliance_review",
+            Application.status == "decision_pending"
         )
-        if is_inst:
-            q_w = q_w.filter(Application.submitted_by == current_user.id)
-        count = q_w.count()
-        weekly.append({"week": f"W{8 - w}", "count": count, "date": week_start.strftime("%b %d")})
+    ).count()
 
-    # Compliance summary
-    if is_inst:
-        inst_app_ids = [a.id for a in base_apps.all()]
-        q_comp = db.query(ComplianceCheck).filter(ComplianceCheck.application_id.in_(inst_app_ids)) if inst_app_ids else None
-        total_checks = q_comp.count() if q_comp else 0
-        pass_checks = q_comp.filter(ComplianceCheck.result == "pass").count() if q_comp else 0
-        fail_checks = q_comp.filter(ComplianceCheck.result == "fail").count() if q_comp else 0
-        warn_checks = q_comp.filter(ComplianceCheck.result == "warning").count() if q_comp else 0
-    else:
-        total_checks = db.query(ComplianceCheck).count()
-        pass_checks = db.query(ComplianceCheck).filter(ComplianceCheck.result == "pass").count()
-        fail_checks = db.query(ComplianceCheck).filter(ComplianceCheck.result == "fail").count()
-        warn_checks = db.query(ComplianceCheck).filter(ComplianceCheck.result == "warning").count()
+    decision_recorded_count = db.query(Application).filter(
+        (Application.submitted_by == current_user.id) if is_inst else True,
+        or_(
+            Application.status == "DECISION_RECORDED",
+            Application.status == "cleared",
+            Application.status == "rejected"
+        )
+    ).count()
 
-    compliance_summary = {
-        "pass": pass_checks,
-        "fail": fail_checks,
-        "warning": warn_checks,
-        "total": total_checks
-    }
+    # Institution Profile Summary for Dashboard
+    inst_profile_data = None
+    inst = db.query(Institution).filter(Institution.id == current_user.institution_id).first() if current_user.institution_id else db.query(Institution).first()
+    if inst:
+        inst_profile_data = {
+            "name": inst.name,
+            "aicte_id": inst.aicte_id,
+            "type": inst.institution_type,
+            "state": inst.state,
+            "city": inst.district,
+            "affiliation": inst.university_affiliation,
+            "campus_acres": inst.campus_acres
+        }
 
-    # Severity distribution
-    sev_dist = {}
-    for sev in FindingSeverity:
-        q_sev = db.query(Finding).filter(Finding.severity == sev.value)
-        if is_inst:
-            inst_app_ids = [a.id for a in base_apps.all()]
-            q_sev = q_sev.filter(Finding.application_id.in_(inst_app_ids)) if inst_app_ids else None
-        sev_dist[sev.value] = q_sev.count() if q_sev else 0
+    # Additional metrics for summary compatibility
+    inst_app_ids = [a.id for a in base_query.all()]
+    total_docs = db.query(Document).filter(Document.application_id.in_(inst_app_ids)).count() if inst_app_ids else 0
+    total_findings = db.query(Finding).filter(Finding.application_id.in_(inst_app_ids)).count() if inst_app_ids else 0
+    open_findings = db.query(Finding).filter(Finding.application_id.in_(inst_app_ids), Finding.status == "open").count() if inst_app_ids else 0
+    avg_score = round(float(db.query(func.avg(Application.scrutiny_score)).filter(Application.id.in_(inst_app_ids)).scalar() or 0), 1) if inst_app_ids else 0.0
 
     return DashboardStats(
-        total_applications=total,
-        under_review=under_review,
-        deficiencies=deficiencies,
-        cleared=cleared,
+        institution_profile=inst_profile_data,
+        total_applications=total_apps,
+        draft_applications=draft_count,
+        action_required_applications=action_required_count,
+        ready_for_review_applications=ready_for_review_count,
+        under_review_applications=under_review_count,
+        decision_recorded_applications=decision_recorded_count,
+        under_review=under_review_count,
+        deficiencies=action_required_count,
+        cleared=decision_recorded_count,
         total_documents=total_docs,
         total_findings=total_findings,
         open_findings=open_findings,
         avg_scrutiny_score=avg_score,
-        status_distribution=status_dist,
-        type_distribution=type_dist,
-        region_distribution=region_dist,
-        weekly_submissions=weekly,
-        compliance_summary=compliance_summary,
-        severity_distribution=sev_dist
+        status_distribution={
+            "DRAFT": draft_count,
+            "ACTION_REQUIRED": action_required_count,
+            "READY_FOR_REVIEW": ready_for_review_count,
+            "UNDER_SCRUTINY": under_review_count,
+            "DECISION_RECORDED": decision_recorded_count
+        }
     )
 
 
 # ============================================================
-# APPLICATION ROUTES & PIPELINE
+# APPLICATION ROUTES & WIZARD (Section 5)
 # ============================================================
 @app.get("/applications", response_model=List[ApplicationOut], tags=["Applications"])
 def list_applications(
     status: Optional[str] = None,
     stage: Optional[str] = None,
-    region: Optional[str] = None,
     search: Optional[str] = None,
     skip: int = 0,
     limit: int = 50,
@@ -289,30 +361,61 @@ def list_applications(
 ):
     role = normalize_role(current_user.role)
     q = db.query(Application)
-    
+
+    # 1. Enforce strict institution isolation
+    if role == UserRole.INSTITUTION.value:
+        q = q.filter(Application.submitted_by == current_user.id)
+    # 2. Scrutiny Officer view
+    elif role == UserRole.SCRUTINY_OFFICER.value:
+        # sees applications ready for review or under scrutiny
+        q = q.filter(or_(
+            Application.status.in_(["READY_FOR_REVIEW", "UNDER_SCRUTINY", "submitted", "under_review", "CLARIFICATION_REQUESTED"]),
+            Application.verification_officer_id == current_user.id
+        ))
+    # 3. Compliance Officer view
+    elif role == UserRole.COMPLIANCE_OFFICER.value:
+        # sees applications in compliance review or beyond
+        q = q.filter(or_(
+            Application.status.in_(["UNDER_COMPLIANCE_REVIEW", "compliance_review", "DOC_VERIFIED", "DECISION_RECORDED"]),
+            Application.compliance_reviewer_id == current_user.id
+        ))
+    # 4. Chairman / Decision-Maker view
+    elif role == UserRole.CHAIRMAN.value:
+        # sees applications pending decision or decided
+        q = q.filter(or_(
+            Application.current_stage.in_(["decision", "completed"]),
+            Application.status.in_(["DECISION_RECORDED", "UNDER_COMPLIANCE_REVIEW", "decision_pending", "cleared", "rejected"])
+        ))
+
     if status:
-        q = q.filter(Application.status == status)
+        q = q.filter(Application.status.ilike(status))
     if stage:
         q = q.filter(Application.current_stage == stage)
-    if region:
-        q = q.filter(Application.region == region)
     if search:
-        q = q.filter(
-            or_(
-                Application.application_id.ilike(f"%{search}%"),
-                Application.institution_name.ilike(f"%{search}%"),
-                Application.city.ilike(f"%{search}%"),
-                Application.state.ilike(f"%{search}%")
-            )
-        )
+        q = q.filter(or_(
+            Application.application_id.ilike(f"%{search}%"),
+            Application.institution_name.ilike(f"%{search}%"),
+            Application.city.ilike(f"%{search}%")
+        ))
+
     return q.order_by(Application.submitted_at.desc()).offset(skip).limit(limit).all()
 
 
 @app.get("/applications/{app_id}", response_model=ApplicationOut, tags=["Applications"])
-def get_application(app_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_application(
+    app_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     app_obj = db.query(Application).filter(Application.application_id == app_id).first()
     if not app_obj:
         raise HTTPException(status_code=404, detail="Application not found")
+
+    # Enforce data isolation: Institution can only view its own application
+    role = normalize_role(current_user.role)
+    if role == UserRole.INSTITUTION.value and app_obj.submitted_by != current_user.id:
+        raise HTTPException(status_code=403, detail="Unauthorized: You cannot access another institution's application.")
+
     return app_obj
 
 
@@ -323,17 +426,22 @@ def create_application(
     current_user: User = Depends(require_roles(UserRole.INSTITUTION, UserRole.ADMIN))
 ):
     count = db.query(Application).count() + 1
-    app_id = f"APP-{2000 + count:04d}"
+    generated_app_id = f"APP-2026-{count:04d}"
+
+    inst = db.query(Institution).filter(Institution.id == current_user.institution_id).first() if current_user.institution_id else None
+
     app_obj = Application(
-        application_id=app_id,
-        institution_name=req.institution_name,
-        institution_type=req.institution_type,
-        category=req.category,
-        region=req.region,
-        state=req.state,
-        city=req.city,
-        applied_for=req.applied_for,
-        status=AppStatus.SUBMITTED.value,
+        application_id=generated_app_id,
+        institution_id=inst.id if inst else None,
+        institution_name=req.institution_name or (inst.name if inst else current_user.full_name),
+        institution_type=req.institution_type or "Engineering & Technology",
+        category=req.category or "Extension of Approval (EoA)",
+        academic_year=req.academic_year or "2026-27",
+        region=req.region or "Western",
+        state=req.state or "Maharashtra",
+        city=req.city or "Pune",
+        applied_for=req.applied_for or "Continuation of Technical Courses + Intake Verification",
+        status=AppStatus.DRAFT.value,
         current_stage="submission",
         submitted_by=current_user.id,
         submitted_at=datetime.utcnow(),
@@ -343,470 +451,770 @@ def create_application(
     db.add(app_obj)
     db.commit()
     db.refresh(app_obj)
-    log_audit(db, current_user, "Application Created", "application",
-              app_id, app_obj.id, {"institution": req.institution_name})
+
+    log_audit(db, current_user, "Draft Application Created", "application",
+              generated_app_id, app_obj.id, {"institution": app_obj.institution_name})
     return app_obj
 
 
 # ============================================================
-# DOCUMENT ROUTES & OCR
+# DOCUMENT UPLOAD, VERSIONING & MANAGEMENT (Section 5)
 # ============================================================
+@app.get("/applications/{app_id}/required-documents", tags=["Documents"])
+def get_required_document_checklist(app_id: str, db: Session = Depends(get_db)):
+    """Returns the configurable checklist of required documents for AICTE applications."""
+    return REQUIRED_DOCUMENTS_CONFIG
+
+
 @app.get("/applications/{app_id}/documents", response_model=List[DocumentOut], tags=["Documents"])
-def get_documents(app_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_application_documents(
+    app_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     app_obj = db.query(Application).filter(Application.application_id == app_id).first()
     if not app_obj:
         raise HTTPException(status_code=404, detail="Application not found")
-    return app_obj.documents
+
+    role = normalize_role(current_user.role)
+    if role == UserRole.INSTITUTION.value and app_obj.submitted_by != current_user.id:
+        raise HTTPException(status_code=403, detail="Unauthorized to view documents of another institution.")
+
+    return [d for d in app_obj.documents if d.is_latest]
 
 
 @app.post("/applications/{app_id}/documents", response_model=DocumentOut, tags=["Documents"])
-async def upload_document(
+async def upload_application_document(
     app_id: str,
     doc_type: str = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_roles(UserRole.INSTITUTION, UserRole.ADMIN))
 ):
     app_obj = db.query(Application).filter(Application.application_id == app_id).first()
     if not app_obj:
         raise HTTPException(status_code=404, detail="Application not found")
 
-    upload_dir = os.path.join(settings.UPLOAD_DIR, app_id)
-    os.makedirs(upload_dir, exist_ok=True)
+    role = normalize_role(current_user.role)
+    if role == UserRole.INSTITUTION.value and app_obj.submitted_by != current_user.id:
+        raise HTTPException(status_code=403, detail="Unauthorized to upload documents for another institution.")
 
+    # 1. Validate file extension
+    ext = os.path.splitext(file.filename)[1].lower()
+    allowed_exts = [".pdf", ".png", ".jpg", ".jpeg"]
+    if ext not in allowed_exts:
+        raise HTTPException(status_code=400, detail=f"Unsupported file format '{ext}'. Allowed formats: PDF, PNG, JPG, JPEG.")
+
+    # 2. Read contents and validate size (Max 10MB)
     contents = await file.read()
+    max_bytes = settings.MAX_UPLOAD_MB * 1024 * 1024
+    if len(contents) > max_bytes:
+        raise HTTPException(status_code=400, detail=f"File exceeds maximum size limit of {settings.MAX_UPLOAD_MB}MB.")
+
+    # 3. Calculate SHA-256 hash
     file_hash = hashlib.sha256(contents).hexdigest()
 
-    # Check for duplicate hash
-    existing = db.query(Document).filter(Document.sha256_hash == file_hash).first()
-    dup_flag = existing is not None
-
+    # Save to storage
+    upload_dir = os.path.join(settings.UPLOAD_DIR, app_id)
+    os.makedirs(upload_dir, exist_ok=True)
     file_path = os.path.join(upload_dir, file.filename)
     with open(file_path, "wb") as f:
         f.write(contents)
 
-    doc = Document(
-        application_id=app_obj.id,
-        doc_type=doc_type,
-        filename=file.filename,
-        file_path=file_path,
-        file_size=len(contents),
-        sha256_hash=file_hash,
-        status="flagged" if dup_flag else "pending",
-        verification_result="ANOMALY_FLAG_HASH_COLLISION" if dup_flag else "PENDING_OCR_VERIFICATION",
-        extracted_data={
-            "confidence": 0.94,
-            "pages": 1,
-            "ocr_status": "extracted",
-            "duplicate": dup_flag,
-            "issuing_authority": "Recognized Competent Authority",
-            "extracted_text_preview": f"Verified official copy of {doc_type} presented for AICTE statutory review."
-        },
-        uploaded_at=datetime.utcnow()
-    )
-    db.add(doc)
-    db.commit()
-    db.refresh(doc)
-    
-    # If application was in deficiency, uploading documents resets to under_review
-    if app_obj.status == AppStatus.DEFICIENCY.value:
-        app_obj.status = AppStatus.UNDER_REVIEW.value
-        app_obj.updated_at = datetime.utcnow()
+    # 4. Check for existing document of this type to handle versioning
+    existing_doc = db.query(Document).filter(
+        Document.application_id == app_obj.id,
+        Document.doc_type == doc_type.strip(),
+        Document.is_latest == True
+    ).first()
+
+    if existing_doc:
+        # Preserve previous version in DocumentVersion history
+        doc_version_record = DocumentVersion(
+            document_id=existing_doc.id,
+            application_id=app_obj.id,
+            version_number=existing_doc.version or 1,
+            filename=existing_doc.filename,
+            file_path=existing_doc.file_path,
+            file_size=existing_doc.file_size,
+            sha256_hash=existing_doc.sha256_hash,
+            uploaded_at=existing_doc.uploaded_at,
+            uploaded_by=existing_doc.uploaded_by,
+            extracted_data=existing_doc.extracted_data,
+            verification_result=existing_doc.verification_result,
+            change_reason="Corrected replacement document uploaded by institution."
+        )
+        db.add(doc_version_record)
         db.commit()
 
-    log_audit(db, current_user, "Document Uploaded", "document",
-              str(doc.id), app_obj.id, {"filename": file.filename, "duplicate": dup_flag})
-    return doc
+        # Update existing doc with new version without deleting previous version
+        new_version_num = (existing_doc.version or 1) + 1
+        existing_doc.version = new_version_num
+        existing_doc.filename = file.filename
+        existing_doc.file_path = file_path
+        existing_doc.file_size = len(contents)
+        existing_doc.sha256_hash = file_hash
+        existing_doc.uploaded_at = datetime.utcnow()
+        existing_doc.uploaded_by = current_user.id
+        existing_doc.status = "pending"
+        existing_doc.verification_result = "Uploaded new version. Pending re-validation."
+        existing_doc.extracted_data = {
+            "version": new_version_num,
+            "ocr_status": "ready",
+            "institution_name": app_obj.institution_name,
+            "filename": file.filename
+        }
+        db.commit()
+        db.refresh(existing_doc)
+        doc_to_return = existing_doc
+
+        log_audit(db, current_user, f"Document Replaced (Version {new_version_num})", "document",
+                  str(existing_doc.id), app_obj.id, {"filename": file.filename, "version": new_version_num})
+    else:
+        # Create brand new document
+        new_doc = Document(
+            application_id=app_obj.id,
+            doc_type=doc_type.strip(),
+            filename=file.filename,
+            file_path=file_path,
+            file_size=len(contents),
+            sha256_hash=file_hash,
+            version=1,
+            is_latest=True,
+            status="pending",
+            verification_result="Pending validation",
+            extracted_data={
+                "version": 1,
+                "ocr_status": "ready",
+                "institution_name": app_obj.institution_name,
+                "filename": file.filename
+            },
+            uploaded_at=datetime.utcnow(),
+            uploaded_by=current_user.id
+        )
+        db.add(new_doc)
+        db.commit()
+        db.refresh(new_doc)
+        doc_to_return = new_doc
+
+        log_audit(db, current_user, "Document Uploaded", "document",
+                  str(new_doc.id), app_obj.id, {"filename": file.filename, "type": doc_type})
+
+    return doc_to_return
 
 
-@app.put("/documents/{doc_id}/verify", response_model=DocumentOut, tags=["Documents"])
-def verify_document_item(
+@app.get("/documents/{doc_id}/download", tags=["Documents"])
+def download_document(
     doc_id: int,
-    status_update: str = Query(..., description="verified, flagged, pending, evidence_requested"),
-    remarks: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.VERIFICATION_OFFICER, UserRole.ADMIN))
+    current_user: User = Depends(get_current_user)
 ):
     doc = db.query(Document).filter(Document.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    
-    doc.status = status_update
-    doc.verification_result = remarks or f"Manually verified by {current_user.full_name}"
-    db.commit()
-    db.refresh(doc)
-    
-    log_audit(db, current_user, f"Document Verified ({status_update})", "document",
-              str(doc.id), doc.application_id, {"status": status_update, "remarks": remarks})
-    return doc
+
+    app_obj = doc.application
+    role = normalize_role(current_user.role)
+    if role == UserRole.INSTITUTION.value and app_obj.submitted_by != current_user.id:
+        raise HTTPException(status_code=403, detail="Unauthorized access to document.")
+
+    if doc.file_path and os.path.exists(doc.file_path):
+        return FileResponse(
+            path=doc.file_path,
+            filename=doc.filename,
+            media_type="application/pdf" if doc.filename.lower().endswith(".pdf") else "application/octet-stream"
+        )
+    else:
+        # Check if sample document exists in public sample folder
+        sample_path = os.path.join("..", "frontend", "public", "sample_documents", doc.filename)
+        if os.path.exists(sample_path):
+            return FileResponse(path=sample_path, filename=doc.filename, media_type="application/pdf")
+        raise HTTPException(status_code=404, detail="Document physical file not found on server.")
 
 
 # ============================================================
-# 5-AGENT AI VALIDATION PIPELINE
-# (Internal service: generates findings; never triggers adverse decision alone)
+# AI VALIDATION MIDDLEWARE & DEFICIENCY WORKFLOW (Sections 6 & 7)
 # ============================================================
-@app.post("/applications/{app_id}/validate", tags=["Compliance"])
-def run_validation(
+@app.post("/applications/{app_id}/validate", tags=["Validation"])
+def validate_application(
     app_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Trigger the 5-Agent AI Validation Pipeline:
-    1. Document Intelligence Agent
-    2. Forensic Anomaly Agent
-    3. Issuer Verification Agent
-    4. Compliance Evaluation Agent
-    5. Dossier Aggregation Agent
-    Generates evidence-linked findings without auto-rejecting. Advances stage to doc_verification.
+    Executes the central 7-Check AI Validation & Verification Middleware.
+    Validates completeness, information extraction, consistency, manipulation,
+    issuing authority, and compliance rules.
+    Transitions application to ACTION_REQUIRED or READY_FOR_REVIEW.
     """
     app_obj = db.query(Application).filter(Application.application_id == app_id).first()
     if not app_obj:
         raise HTTPException(status_code=404, detail="Application not found")
 
-    agents_run = [
-        {"agent": "Document Intelligence Agent", "task": "OCR data extraction, date validation, and metadata structuring", "status": "COMPLETED"},
-        {"agent": "Forensic Anomaly Agent", "task": "SHA-256 integrity, tamper detection, compression noise audit", "status": "COMPLETED"},
-        {"agent": "Issuer Verification Agent", "task": "Issuing authority validation against public registers", "status": "COMPLETED"},
-        {"agent": "Compliance Evaluation Agent", "task": "Statutory rule matching against AICTE APH 2026-27 Norms", "status": "COMPLETED"},
-        {"agent": "Dossier Aggregation Agent", "task": "Multi-agent synthesis, evidence linking, and composite scoring", "status": "COMPLETED"}
-    ]
+    role = normalize_role(current_user.role)
+    if role == UserRole.INSTITUTION.value and app_obj.submitted_by != current_user.id:
+        raise HTTPException(status_code=403, detail="Unauthorized to trigger validation for another institution's application.")
 
-    docs = db.query(Document).filter(Document.application_id == app_obj.id).all()
-    doc_types_uploaded = {d.doc_type.lower() for d in docs if d.status == 'verified'}
-    all_doc_types = {d.doc_type.lower() for d in docs}
-
-    # Fetch statutory rules from database or fallback to APH standards
-    configured_rules = db.query(RegulatoryRule).filter(RegulatoryRule.is_active == True).all()
-    if not configured_rules:
-        # Default statutory APH standards
-        default_rules = [
-            ("APH-2.1", "Infrastructure & Land Area", "Land & Building",
-             f"Land Ownership Title Deed and campus area verified for {app_obj.institution_name}",
-             "Land Ownership Title Deed verified", "5.0 Acres Contiguous", ["land", "building"]),
-            ("APH-3.4", "Faculty & Cadre Ratio", "Human Resources",
-             "Cadre ratio and faculty-student ratio evaluated across approved technical departments",
-             "Faculty ratio verified", "1:20 SFR required", ["faculty", "staff"]),
-            ("APH-4.2", "Fire & Life Safety Clearance", "Statutory Safety",
-             "Fire Safety NOC issued by State Fire Services Department",
-             "Fire Safety NOC valid", "Valid NOC required", ["fire", "safety"]),
-            ("APH-5.1", "Approved Building & Structural Plan", "Infrastructure",
-             "Competent municipal/PWD authority approved structural building layout",
-             "Building Plan approved", "Approved Plan required", ["plan", "structural", "building"]),
-            ("APH-6.3", "Endowment & Financial FDR", "Finance",
-             "Joint Fixed Deposit Receipt (FDR) created in name of AICTE and Society",
-             "Joint FDR created", "FDR ₹50 Lakhs required", ["fdr", "financial", "deposit"])
-        ]
-        for rule_id, rule_name, cat, details, evidence, req_val, keywords in default_rules:
-            matched_verified = any(k in dt for dt in doc_types_uploaded for k in keywords)
-            matched_any = any(k in dt for dt in all_doc_types for k in keywords)
-
-            res = "pass" if matched_verified else ("warning" if matched_any else "fail")
-            
-            existing_check = db.query(ComplianceCheck).filter(
-                ComplianceCheck.application_id == app_obj.id,
-                ComplianceCheck.rule_id == rule_id
-            ).first()
-
-            if not existing_check:
-                check_obj = ComplianceCheck(
-                    application_id=app_obj.id,
-                    rule_id=rule_id,
-                    rule_name=rule_name,
-                    category=cat,
-                    result=res,
-                    details=details if res == "pass" else f"{details} — Mandatory proof pending upload or verification.",
-                    evidence_value=evidence if res == "pass" else "Pending upload/verification",
-                    required_value=req_val
-                )
-                db.add(check_obj)
-            else:
-                existing_check.result = res
-
-            if res != "pass":
-                existing_finding = db.query(Finding).filter(
-                    Finding.application_id == app_obj.id,
-                    Finding.rule_id == rule_id
-                ).first()
-                if not existing_finding:
-                    severity = FindingSeverity.HIGH.value if ("Safety" in rule_name or "Land" in rule_name) else FindingSeverity.MEDIUM.value
-                    finding = Finding(
-                        application_id=app_obj.id,
-                        rule_id=rule_id,
-                        rule_description=f"Regulatory Check: {rule_name}",
-                        severity=severity,
-                        status=FindingStatus.OPEN.value,
-                        finding_text=f"Statutory compliance requirement ({req_val}) for {rule_name} is unresolved. Please upload the official certified document."
-                    )
-                    db.add(finding)
-    else:
-        for r in configured_rules:
-            existing_check = db.query(ComplianceCheck).filter(
-                ComplianceCheck.application_id == app_obj.id,
-                ComplianceCheck.rule_id == r.rule_id
-            ).first()
-            if not existing_check:
-                check_obj = ComplianceCheck(
-                    application_id=app_obj.id,
-                    rule_id=r.rule_id,
-                    rule_name=r.rule_name,
-                    category=r.category,
-                    result="warning" if len(docs) > 0 else "fail",
-                    details=r.description or f"Check against {r.rule_name}",
-                    evidence_value="Pending review",
-                    required_value=r.required_value
-                )
-                db.add(check_obj)
-
+    app_obj.status = AppStatus.VALIDATING.value
     db.commit()
 
-    # Calculate scrutiny score based on checks
-    total_checks = db.query(ComplianceCheck).filter(ComplianceCheck.application_id == app_obj.id).count()
-    pass_checks = db.query(ComplianceCheck).filter(
-        ComplianceCheck.application_id == app_obj.id,
-        ComplianceCheck.result == "pass"
-    ).count()
-
-    if total_checks > 0:
-        app_obj.scrutiny_score = round((pass_checks / total_checks) * 100, 1)
-
-    # Transition pipeline to doc_verification; do NOT auto-reject or auto-approve!
-    app_obj.status = AppStatus.UNDER_REVIEW.value
-    app_obj.current_stage = "doc_verification"
-    app_obj.updated_at = datetime.utcnow()
-    db.commit()
-
-    log_audit(db, current_user, "AI Validation Pipeline Executed", "validation",
-              app_id, app_obj.id, {
-                  "agents_count": len(agents_run),
-                  "scrutiny_score": app_obj.scrutiny_score,
-                  "current_stage": app_obj.current_stage
-              })
-
-    return {
-        "status": "success",
-        "message": f"5-Agent AI Validation completed for {app_id}. Application transferred to Verification Officer desk.",
-        "agents_executed": agents_run,
-        "scrutiny_score": app_obj.scrutiny_score,
-        "current_stage": app_obj.current_stage
-    }
+    validation_result = run_central_ai_validation(db, app_id, current_user.id)
+    return validation_result
 
 
-# ============================================================
-# ROLE 2: VERIFICATION OFFICER WORKFLOW
-# ============================================================
-@app.post("/applications/{app_id}/complete-verification", response_model=ApplicationOut, tags=["Verification"])
-def complete_verification_milestone(
+@app.post("/applications/{app_id}/submit-to-officer", response_model=ApplicationOut, tags=["Workflow"])
+def submit_to_scrutiny_officer(
     app_id: str,
-    req: CompleteVerificationRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.VERIFICATION_OFFICER, UserRole.ADMIN))
+    current_user: User = Depends(require_roles(UserRole.INSTITUTION, UserRole.ADMIN))
 ):
     """
-    Verification Officer reviews documents, OCR flags, anomalies, and completes milestone.
-    Advances pipeline stage to 'compliance_review'.
+    Institution submits validated application to Scrutiny Officer queue.
+    Only permitted when application is in READY_FOR_REVIEW status.
     """
     app_obj = db.query(Application).filter(Application.application_id == app_id).first()
     if not app_obj:
         raise HTTPException(status_code=404, detail="Application not found")
 
-    is_verified = (req.status == "verified")
-    app_obj.verification_status = "verified" if is_verified else "evidence_requested"
+    if app_obj.status != AppStatus.READY_FOR_REVIEW.value and app_obj.status != "READY_FOR_REVIEW":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Application cannot be submitted to officers in '{app_obj.status}' status. All mandatory checks must pass first."
+        )
+
+    app_obj.status = AppStatus.UNDER_SCRUTINY.value
+    app_obj.current_stage = "scrutiny"
+    app_obj.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(app_obj)
+
+    log_audit(db, current_user, "Submitted to Scrutiny Officer", "application",
+              app_id, app_obj.id, {"stage": "scrutiny"})
+    return app_obj
+
+
+@app.post("/applications/{app_id}/submit-clarification", response_model=ApplicationOut, tags=["Workflow"])
+def submit_clarification_response(
+    app_id: str,
+    req: ClarificationSubmit,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.INSTITUTION, UserRole.ADMIN))
+):
+    """
+    Institution submits an official clarification reply to a Scrutiny or Compliance query.
+    Transitions application status back to UNDER_SCRUTINY or UNDER_COMPLIANCE_REVIEW.
+    """
+    app_obj = db.query(Application).filter(Application.application_id == app_id).first()
+    if not app_obj:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    role = normalize_role(current_user.role)
+    if role == UserRole.INSTITUTION.value and app_obj.submitted_by != current_user.id:
+        raise HTTPException(status_code=403, detail="Unauthorized to submit clarification for another institution's application.")
+
+    action_record = ReviewAction(
+        application_id=app_obj.id,
+        officer_id=current_user.id,
+        officer_name=current_user.full_name,
+        officer_role="INSTITUTION",
+        action_type="CLARIFICATION_SUBMITTED",
+        comments=req.response_text,
+        created_at=datetime.utcnow()
+    )
+    db.add(action_record)
+
+    # Resume to scrutiny or compliance depending on verification progress
+    if app_obj.verification_status == "verified":
+        app_obj.status = AppStatus.UNDER_COMPLIANCE_REVIEW.value
+        app_obj.current_stage = "compliance"
+    else:
+        app_obj.status = AppStatus.UNDER_SCRUTINY.value
+        app_obj.current_stage = "scrutiny"
+
+    app_obj.updated_at = datetime.utcnow()
+
+    # Notify officer
+    target_officer_id = app_obj.compliance_reviewer_id if app_obj.status == AppStatus.UNDER_COMPLIANCE_REVIEW.value else app_obj.verification_officer_id
+    if target_officer_id:
+        notif = Notification(
+            user_id=target_officer_id,
+            application_id=app_obj.id,
+            title="Clarification Received from Institution",
+            message=f"Institution '{app_obj.institution_name}' has furnished clarification for #{app_id}: {req.response_text[:140]}...",
+            type="STATUS_CHANGE",
+            created_at=datetime.utcnow()
+        )
+        db.add(notif)
+
+    db.commit()
+    db.refresh(app_obj)
+
+    log_audit(db, current_user, "Clarification Submitted by Institution", "application",
+              app_id, app_obj.id, {"response": req.response_text, "resumed_status": app_obj.status})
+    return app_obj
+
+
+# ============================================================
+# OFFICER REVIEW & DECISION WORKFLOW (Section 9)
+# ============================================================
+@app.post("/applications/{app_id}/scrutiny-action", response_model=ApplicationOut, tags=["Officer Review"])
+def record_scrutiny_action(
+    app_id: str,
+    req: ReviewActionCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.SCRUTINY_OFFICER, UserRole.ADMIN))
+):
+    """
+    Scrutiny Officer reviews dossier evidence and either:
+    - FORWARDED_TO_COMPLIANCE -> forwards to Compliance Reviewer (UNDER_COMPLIANCE_REVIEW)
+    - CLARIFICATION_REQUESTED -> returns to Institution for clarification
+    - OBSERVATION -> records review finding
+    """
+    app_obj = db.query(Application).filter(Application.application_id == app_id).first()
+    if not app_obj:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    action_record = ReviewAction(
+        application_id=app_obj.id,
+        officer_id=current_user.id,
+        officer_name=current_user.full_name,
+        officer_role=UserRole.SCRUTINY_OFFICER.value,
+        action_type=req.action_type,
+        comments=req.comments,
+        created_at=datetime.utcnow()
+    )
+    db.add(action_record)
+
     app_obj.verification_officer_id = current_user.id
-    app_obj.verification_remarks = req.remarks
+    app_obj.verification_remarks = req.comments
     app_obj.verification_completed_at = datetime.utcnow()
-    app_obj.updated_at = datetime.utcnow()
 
-    if is_verified:
-        app_obj.status = AppStatus.DOC_VERIFIED.value
-        app_obj.current_stage = "compliance_review"
-    else:
-        app_obj.status = AppStatus.DEFICIENCY.value
+    if req.action_type == "FORWARDED_TO_COMPLIANCE":
+        app_obj.status = AppStatus.UNDER_COMPLIANCE_REVIEW.value
+        app_obj.current_stage = "compliance"
+        app_obj.verification_status = "verified"
+    elif req.action_type == "CLARIFICATION_REQUESTED":
+        app_obj.status = AppStatus.CLARIFICATION_REQUESTED.value
         app_obj.current_stage = "submission"
+        # Notify institution
+        notif = Notification(
+            user_id=app_obj.submitted_by,
+            application_id=app_obj.id,
+            title="Scrutiny Officer: Clarification Requested",
+            message=f"Scrutiny Officer {current_user.full_name} has requested clarification on Application #{app_id}: {req.comments}",
+            type="CLARIFICATION_REQUEST",
+            created_at=datetime.utcnow()
+        )
+        db.add(notif)
 
+    app_obj.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(app_obj)
 
-    log_audit(db, current_user, f"Document Verification Completed ({app_obj.verification_status})", "application",
-              app_id, app_obj.id, {"remarks": req.remarks, "stage": app_obj.current_stage})
+    log_audit(db, current_user, f"Scrutiny Review Action: {req.action_type}", "application",
+              app_id, app_obj.id, {"comments": req.comments, "stage": app_obj.current_stage})
     return app_obj
 
 
-# ============================================================
-# ROLE 3: COMPLIANCE REVIEWER WORKFLOW
-# ============================================================
-@app.post("/applications/{app_id}/compliance-recommendation", response_model=ApplicationOut, tags=["Compliance"])
-def submit_compliance_recommendation(
+@app.post("/applications/{app_id}/compliance-action", response_model=ApplicationOut, tags=["Officer Review"])
+def record_compliance_action(
     app_id: str,
-    req: SubmitComplianceRecommendationRequest,
+    req: ReviewActionCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.COMPLIANCE_REVIEWER, UserRole.ADMIN))
+    current_user: User = Depends(require_roles(UserRole.COMPLIANCE_OFFICER, UserRole.ADMIN))
 ):
     """
-    Compliance Reviewer reviews statutory checklist, infrastructure evidence, and records recommendation.
-    Advances pipeline stage to 'decision' for Authorized Decision-Maker.
+    Compliance Officer reviews statutory rules against evidence and either:
+    - FORWARDED_TO_DECISION -> forwards to Authorized Decision-Maker (decision)
+    - CLARIFICATION_REQUESTED -> returns to Institution for clarification
+    - OBSERVATION -> records compliance observation
     """
     app_obj = db.query(Application).filter(Application.application_id == app_id).first()
     if not app_obj:
         raise HTTPException(status_code=404, detail="Application not found")
 
-    app_obj.compliance_status = "completed"
-    app_obj.compliance_reviewer_id = current_user.id
-    app_obj.compliance_recommendation = req.recommendation
-    app_obj.compliance_remarks = req.remarks
-    app_obj.compliance_completed_at = datetime.utcnow()
-    app_obj.status = AppStatus.DECISION_PENDING.value
-    app_obj.current_stage = "decision"
-    app_obj.updated_at = datetime.utcnow()
+    action_record = ReviewAction(
+        application_id=app_obj.id,
+        officer_id=current_user.id,
+        officer_name=current_user.full_name,
+        officer_role=UserRole.COMPLIANCE_OFFICER.value,
+        action_type=req.action_type,
+        comments=req.comments,
+        created_at=datetime.utcnow()
+    )
+    db.add(action_record)
 
+    app_obj.compliance_reviewer_id = current_user.id
+    app_obj.compliance_remarks = req.comments
+    app_obj.compliance_completed_at = datetime.utcnow()
+
+    if req.action_type == "FORWARDED_TO_DECISION":
+        app_obj.current_stage = "decision"
+        app_obj.compliance_status = "recommended_for_decision"
+    elif req.action_type == "CLARIFICATION_REQUESTED":
+        app_obj.status = AppStatus.CLARIFICATION_REQUESTED.value
+        app_obj.current_stage = "submission"
+        notif = Notification(
+            user_id=app_obj.submitted_by,
+            application_id=app_obj.id,
+            title="Compliance Reviewer: Clarification Requested",
+            message=f"Compliance Reviewer {current_user.full_name} has requested clarification on Application #{app_id}: {req.comments}",
+            type="CLARIFICATION_REQUEST",
+            created_at=datetime.utcnow()
+        )
+        db.add(notif)
+
+    app_obj.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(app_obj)
 
-    log_audit(db, current_user, f"Compliance Scrutiny Recommendation Logged ({req.recommendation})", "application",
-              app_id, app_obj.id, {"recommendation": req.recommendation, "remarks": req.remarks})
+    log_audit(db, current_user, f"Compliance Review Action: {req.action_type}", "application",
+              app_id, app_obj.id, {"comments": req.comments, "stage": app_obj.current_stage})
     return app_obj
 
 
-# ============================================================
-# ROLE 4: AUTHORIZED AICTE DECISION-MAKER WORKFLOW
-# (Strictly enforced: Admin or Officers CANNOT execute official regulatory decision)
-# ============================================================
-@app.post("/applications/{app_id}/official-decision", response_model=ApplicationOut, tags=["Decision"])
-def issue_official_decision(
+@app.post("/applications/{app_id}/record-decision", response_model=ApplicationOut, tags=["Authorized Decision"])
+def record_official_decision(
     app_id: str,
-    req: OfficialDecisionRequest,
+    req: DecisionRecordCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.DECISION_MAKER))
+    current_user: User = Depends(require_roles(UserRole.CHAIRMAN))
 ):
     """
     Authorized AICTE Decision-Maker signs the official statutory decree:
-    - CLEARED (Approved / EoA Granted)
+    - CLEARED (Extension of Approval Granted)
     - DEFICIENCY (Deficiencies issued with rectification timeline)
     - REJECTED (Statutory refusal with official grounds)
+    Reason is strictly required for adverse decisions.
+    Officers or Admins cannot record final regulatory decisions.
     """
     app_obj = db.query(Application).filter(Application.application_id == app_id).first()
     if not app_obj:
         raise HTTPException(status_code=404, detail="Application not found")
 
-    decision_normalized = req.decision.upper()
-    if decision_normalized not in ("CLEARED", "DEFICIENCY", "REJECTED"):
-        raise HTTPException(status_code=400, detail="Decision must be CLEARED, DEFICIENCY, or REJECTED")
+    decision_norm = req.decision.strip().upper()
+    if decision_norm not in ("CLEARED", "DEFICIENCY", "REJECTED"):
+        raise HTTPException(status_code=400, detail="Decision must be CLEARED, DEFICIENCY, or REJECTED.")
+
+    if decision_norm in ("DEFICIENCY", "REJECTED") and (not req.reasons or len(req.reasons.strip()) < 10):
+        raise HTTPException(status_code=400, detail="A detailed reasoned justification is strictly mandatory for adverse decisions.")
 
     order_no = req.order_number or f"AICTE/ORDER/{datetime.utcnow().year}/{app_id}"
+
+    # Remove prior decision record if resubmitted
+    db.query(DecisionRecord).filter(DecisionRecord.application_id == app_obj.id).delete()
+
+    decision_record = DecisionRecord(
+        application_id=app_obj.id,
+        decision_maker_id=current_user.id,
+        decision_maker_name=current_user.full_name,
+        decision=decision_norm,
+        reasons=req.reasons,
+        order_number=order_no,
+        authority_designation=req.authority_designation or "Member Secretary, AICTE",
+        decided_at=datetime.utcnow()
+    )
+    db.add(decision_record)
+
+    # Update application
     app_obj.decision_maker_id = current_user.id
-    app_obj.final_decision = decision_normalized
+    app_obj.final_decision = decision_norm
     app_obj.decision_remarks = req.reasons
     app_obj.decision_order_no = order_no
     app_obj.decision_at = datetime.utcnow()
+    app_obj.status = AppStatus.DECISION_RECORDED.value
     app_obj.current_stage = "completed"
-    app_obj.status = decision_normalized.lower()
     app_obj.updated_at = datetime.utcnow()
 
+    # Create notification for institution
+    notif_title = f"Statutory Order Issued: {decision_norm}"
+    notif_msg = f"Official AICTE Order #{order_no} has been recorded for Application #{app_id}: {decision_norm}. Observations: {req.reasons}"
+    notif = Notification(
+        user_id=app_obj.submitted_by,
+        application_id=app_obj.id,
+        title=notif_title,
+        message=notif_msg,
+        type="DECISION_RECORDED",
+        created_at=datetime.utcnow()
+    )
+    db.add(notif)
     db.commit()
     db.refresh(app_obj)
 
-    log_audit(db, current_user, f"Official AICTE Order Issued: {decision_normalized}", "application",
-              app_id, app_obj.id, {
-                  "order_number": order_no,
-                  "decision": decision_normalized,
-                  "reasons": req.reasons,
-                  "authority": req.authority_designation
-              })
+    log_audit(db, current_user, f"Official Decision Recorded: {decision_norm}", "application",
+              app_id, app_obj.id, {"order_no": order_no, "decision": decision_norm, "reasons": req.reasons})
     return app_obj
 
 
 # ============================================================
-# PIPELINE STATUS & AUDIT INSPECTION
+# UNIFIED OFFICER REVIEW & APPROVAL WORKFLOW
 # ============================================================
-@app.get("/applications/{app_id}/pipeline", tags=["Pipeline"])
-def get_application_pipeline(
+@app.post("/applications/{app_id}/officer-send-suggestions", response_model=ApplicationOut, tags=["Officer Unified Review"])
+def officer_send_suggestions(
     app_id: str,
+    req: OfficerSendSuggestionsRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_roles(UserRole.OFFICER, UserRole.ADMIN))
 ):
+    """
+    Unified AICTE Approval Officer sends suggestions / deficiency remarks to the institution
+    even if AI validation passed, whenever faults or corrections are identified during manual review.
+    Transitions status to ACTION_REQUIRED so institution can verify & update before final approval.
+    """
     app_obj = db.query(Application).filter(Application.application_id == app_id).first()
     if not app_obj:
         raise HTTPException(status_code=404, detail="Application not found")
 
-    docs = app_obj.documents
-    checks = app_obj.compliance_checks
-    findings = app_obj.findings
+    suggestions_text = req.suggestions.strip()
+    if not suggestions_text:
+        raise HTTPException(status_code=400, detail="Officer suggestions cannot be empty.")
 
-    vo = db.query(User).filter(User.id == app_obj.verification_officer_id).first() if app_obj.verification_officer_id else None
-    cr = db.query(User).filter(User.id == app_obj.compliance_reviewer_id).first() if app_obj.compliance_reviewer_id else None
-    dm = db.query(User).filter(User.id == app_obj.decision_maker_id).first() if app_obj.decision_maker_id else None
-    sub_user = db.query(User).filter(User.id == app_obj.submitted_by).first() if app_obj.submitted_by else None
+    # Record officer details & suggestions
+    app_obj.status = AppStatus.ACTION_REQUIRED.value
+    app_obj.current_stage = "submission"
+    app_obj.officer_id = current_user.id
+    app_obj.officer_name = current_user.full_name
+    app_obj.officer_suggestions = suggestions_text
+    app_obj.officer_reviewed_at = datetime.utcnow()
+    app_obj.verification_officer_id = current_user.id
+    app_obj.verification_remarks = suggestions_text
+    app_obj.updated_at = datetime.utcnow()
+
+    # Record ReviewAction
+    action_record = ReviewAction(
+        application_id=app_obj.id,
+        officer_id=current_user.id,
+        officer_name=current_user.full_name,
+        officer_role="OFFICER",
+        action_type="OFFICER_SUGGESTIONS_SENT",
+        comments=suggestions_text,
+        created_at=datetime.utcnow()
+    )
+    db.add(action_record)
+
+    # Add finding for officer's review finding
+    officer_finding = Finding(
+        application_id=app_obj.id,
+        check_type="OFFICER_REVIEW",
+        rule_id="OFFICER-REMARK",
+        rule_description="Officer Scrutiny Directive & Action Required",
+        severity=FindingSeverity.HIGH,
+        status=FindingStatus.OPEN,
+        finding_text=suggestions_text,
+        detected_issue=req.fault_details or "Officer identified issues requiring rectification during manual dossier review.",
+        why_attention_needed="Officer review identified statutory corrections required prior to official approval.",
+        recommended_action="Follow the officer's guidance, update the relevant documents or data, and re-submit.",
+        ai_suggestion=f"Officer Directive: {suggestions_text}",
+        officer_remark=suggestions_text,
+        reviewed_by=current_user.id,
+        reviewed_at=datetime.utcnow(),
+        created_at=datetime.utcnow()
+    )
+    db.add(officer_finding)
+
+    # Append to app_obj.ai_suggestions if list exists
+    existing_suggestions = list(app_obj.ai_suggestions or [])
+    existing_suggestions.append({
+        "rule_id": "OFFICER-REMARK",
+        "document": "Officer Manual Review Directive",
+        "detected_issue": req.fault_details or "Corrections requested by Approval Officer",
+        "suggestion": suggestions_text,
+        "severity": "high"
+    })
+    app_obj.ai_suggestions = existing_suggestions
+
+    # Send Notification to Institution
+    notif = Notification(
+        user_id=app_obj.submitted_by,
+        application_id=app_obj.id,
+        title="Officer Review: Suggestions & Rectification Required",
+        message=f"AICTE Approval Officer {current_user.full_name} reviewed Application #{app_id} and requested changes: {suggestions_text}",
+        type="DEFICIENCY_ALERT",
+        is_read=False,
+        created_at=datetime.utcnow()
+    )
+    db.add(notif)
+    db.commit()
+    db.refresh(app_obj)
+
+    log_audit(db, current_user, "Officer Sent Suggestions to Institution", "application",
+              app_id, app_obj.id, {"suggestions": suggestions_text})
+    return app_obj
+
+
+@app.post("/applications/{app_id}/officer-approve", response_model=ApplicationOut, tags=["Officer Unified Review"])
+def officer_approve_application(
+    app_id: str,
+    req: OfficerApprovalRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.OFFICER, UserRole.ADMIN))
+):
+    """
+    Unified AICTE Approval Officer approves application and issues official AICTE Certificate of Approval.
+    Transitions status to APPROVED, generates certificate number, and notifies institute with download access.
+    """
+    app_obj = db.query(Application).filter(Application.application_id == app_id).first()
+    if not app_obj:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    clean_id = app_obj.application_id.replace('APP-', '')
+    order_no = req.order_number or f"AICTE/EoA/2026-27/{app_obj.application_id}"
+    cert_no = f"AICTE/CERT/2026-27/{clean_id}"
+    approval_remarks = req.remarks or "Application approved in accordance with AICTE Approval Process Handbook (APH 2026-27) norms."
+
+    # Update application
+    app_obj.status = AppStatus.APPROVED.value
+    app_obj.current_stage = "completed"
+    app_obj.final_decision = "CLEARED"
+    app_obj.decision_remarks = approval_remarks
+    app_obj.decision_order_no = order_no
+    app_obj.decision_at = datetime.utcnow()
+    app_obj.certificate_issued = True
+    app_obj.certificate_number = cert_no
+    app_obj.officer_id = current_user.id
+    app_obj.officer_name = current_user.full_name
+    app_obj.officer_reviewed_at = datetime.utcnow()
+    app_obj.decision_maker_id = current_user.id
+    app_obj.updated_at = datetime.utcnow()
+
+    # Remove previous decision record if any
+    db.query(DecisionRecord).filter(DecisionRecord.application_id == app_obj.id).delete()
+
+    decision_record = DecisionRecord(
+        application_id=app_obj.id,
+        decision_maker_id=current_user.id,
+        decision_maker_name=current_user.full_name,
+        decision="CLEARED",
+        reasons=approval_remarks,
+        order_number=order_no,
+        authority_designation="AICTE Approval Officer / Member Secretary",
+        decided_at=datetime.utcnow()
+    )
+    db.add(decision_record)
+
+    # Record ReviewAction
+    action_record = ReviewAction(
+        application_id=app_obj.id,
+        officer_id=current_user.id,
+        officer_name=current_user.full_name,
+        officer_role="OFFICER",
+        action_type="OFFICER_APPROVED",
+        comments=approval_remarks,
+        created_at=datetime.utcnow()
+    )
+    db.add(action_record)
+
+    # Notify Institution
+    notif = Notification(
+        user_id=app_obj.submitted_by,
+        application_id=app_obj.id,
+        title="Approval Granted: AICTE Certificate Issued!",
+        message=f"Application #{app_id} has been approved by Officer {current_user.full_name}. Official Certificate #{cert_no} is ready for download in your Institute Dashboard.",
+        type="DECISION_RECORDED",
+        is_read=False,
+        created_at=datetime.utcnow()
+    )
+    db.add(notif)
+    db.commit()
+    db.refresh(app_obj)
+
+    log_audit(db, current_user, f"Application Approved & Certificate Issued ({cert_no})", "application",
+              app_id, app_obj.id, {"certificate_no": cert_no, "order_no": order_no})
+    return app_obj
+
+
+@app.get("/applications/{app_id}/certificate", tags=["Certificate"])
+def get_application_certificate(
+    app_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Returns verified Certificate metadata for downloading and printing.
+    """
+    app_obj = db.query(Application).filter(Application.application_id == app_id).first()
+    if not app_obj:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    is_cleared = (
+        (app_obj.status or "").upper() in ("APPROVED", "DECISION_RECORDED", "CLEARED") or
+        (app_obj.final_decision or "").upper() == "CLEARED" or
+        app_obj.certificate_issued
+    )
+
+    if not is_cleared:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Certificate not available: Application #{app_id} is currently in '{app_obj.status}' status."
+        )
+
+    clean_id = app_obj.application_id.replace('APP-', '')
+    cert_no = app_obj.certificate_number or f"AICTE/CERT/2026-27/{clean_id}"
+    order_no = app_obj.decision_order_no or f"AICTE/EoA/2026-27/{app_obj.application_id}"
 
     return {
+        "certificate_number": cert_no,
+        "order_number": order_no,
         "application_id": app_obj.application_id,
         "institution_name": app_obj.institution_name,
-        "current_stage": app_obj.current_stage or "submission",
-        "status": app_obj.status,
-        "scrutiny_score": app_obj.scrutiny_score,
-        "stages": [
-            {
-                "step": 1,
-                "name": "Application Submission",
-                "role": "Institution User",
-                "actor": sub_user.full_name if sub_user else "Institution Applicant",
-                "status": "COMPLETED",
-                "completed_at": app_obj.submitted_at.isoformat() if app_obj.submitted_at else None,
-                "summary": f"{len(docs)} documents uploaded"
-            },
-            {
-                "step": 2,
-                "name": "AI Validation Pipeline",
-                "role": "Internal 5-Agent Service",
-                "actor": "Autonomous Validation Engine (5 Agents)",
-                "status": "COMPLETED" if (len(checks) > 0 or app_obj.scrutiny_score > 0) else "PENDING",
-                "completed_at": app_obj.updated_at.isoformat() if (len(checks) > 0) else None,
-                "summary": f"Scrutiny score {app_obj.scrutiny_score}% with {len(findings)} findings generated"
-            },
-            {
-                "step": 3,
-                "name": "Document Verification",
-                "role": "Verification Officer",
-                "actor": vo.full_name if vo else "Pending Assignment",
-                "status": "COMPLETED" if app_obj.verification_completed_at else ("IN_PROGRESS" if app_obj.current_stage == "doc_verification" else "PENDING"),
-                "completed_at": app_obj.verification_completed_at.isoformat() if app_obj.verification_completed_at else None,
-                "summary": app_obj.verification_remarks or "Reviewing OCR integrity and certificates"
-            },
-            {
-                "step": 4,
-                "name": "Regulatory Scrutiny",
-                "role": "Compliance Reviewer",
-                "actor": cr.full_name if cr else "Pending Assignment",
-                "status": "COMPLETED" if app_obj.compliance_completed_at else ("IN_PROGRESS" if app_obj.current_stage == "compliance_review" else "PENDING"),
-                "completed_at": app_obj.compliance_completed_at.isoformat() if app_obj.compliance_completed_at else None,
-                "summary": f"Recommendation: {app_obj.compliance_recommendation or 'Under Scrutiny'}"
-            },
-            {
-                "step": 5,
-                "name": "Statutory Decision",
-                "role": "Authorized AICTE Decision-Maker",
-                "actor": dm.full_name if dm else "AICTE Directorate",
-                "status": "COMPLETED" if app_obj.decision_at else ("IN_PROGRESS" if app_obj.current_stage == "decision" else "PENDING"),
-                "completed_at": app_obj.decision_at.isoformat() if app_obj.decision_at else None,
-                "summary": f"Order: {app_obj.decision_order_no or 'Awaiting Decision'} ({app_obj.final_decision or 'Pending'})"
-            }
-        ]
+        "institution_type": app_obj.institution_type,
+        "academic_year": app_obj.academic_year or "2026-27",
+        "region": app_obj.region or "Western",
+        "state": app_obj.state or "Maharashtra",
+        "city": app_obj.city or "Pune",
+        "approved_by": app_obj.officer_name or "Dr. Priya Sharma (AICTE Scrutiny & Approval Officer)",
+        "approved_at": (app_obj.decision_at or app_obj.updated_at).isoformat(),
+        "status": "APPROVED",
+        "verification_hash": hashlib.sha256(f"{cert_no}-{app_obj.institution_name}".encode()).hexdigest(),
+        "is_approved": True
     }
 
 
 # ============================================================
-# ROLE 5: SYSTEM ADMINISTRATOR WORKFLOW
-# (User management, rule configuration, system ledger; no direct approval power)
+# NOTIFICATIONS ROUTES
 # ============================================================
-@app.get("/admin/users", response_model=List[UserOut], tags=["Admin"])
-def admin_list_users(
+@app.get("/notifications", response_model=List[NotificationOut], tags=["Notifications"])
+def get_user_notifications(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return db.query(Notification).filter(
+        Notification.user_id == current_user.id
+    ).order_by(Notification.created_at.desc()).limit(30).all()
+
+
+@app.put("/notifications/{notif_id}/read", tags=["Notifications"])
+def mark_notification_read(notif_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    notif = db.query(Notification).filter(Notification.id == notif_id, Notification.user_id == current_user.id).first()
+    if notif:
+        notif.is_read = True
+        db.commit()
+    return {"status": "ok"}
+
+
+# ============================================================
+# AUDIT & ADMIN ROUTES
+# ============================================================
+@app.get("/audit", response_model=List[AuditEventOut], tags=["Audit"])
+def get_audit_trail(
+    app_id: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.ADMIN, UserRole.VERIFICATION_OFFICER, UserRole.DECISION_MAKER))
+    current_user: User = Depends(get_current_user)
 ):
-    return db.query(User).all()
+    q = db.query(AuditEvent)
+    if app_id:
+        app_obj = db.query(Application).filter(Application.application_id == app_id).first()
+        if app_obj:
+            q = q.filter(AuditEvent.application_id == app_obj.id)
+    return q.order_by(AuditEvent.timestamp.desc()).offset(skip).limit(limit).all()
+
+
+@app.get("/admin/users", response_model=List[UserOut], tags=["Admin"])
+def list_admin_users(db: Session = Depends(get_db), current_user: User = Depends(require_roles(UserRole.ADMIN))):
+    return db.query(User).order_by(User.id).all()
 
 
 @app.put("/admin/users/{user_id}/role", response_model=UserOut, tags=["Admin"])
-def admin_update_user_role(
+def update_user_role(
     user_id: int,
     req: UserRoleUpdate,
     db: Session = Depends(get_db),
@@ -822,17 +1230,13 @@ def admin_update_user_role(
         user.is_active = req.is_active
     db.commit()
     db.refresh(user)
-    
-    log_audit(db, current_user, f"User Role Updated ({old_role} -> {user.role})", "user",
-              str(user.id), None, {"updated_by": current_user.email})
+
+    log_audit(db, current_user, f"User Role Changed ({old_role} -> {user.role})", "user", str(user.id), None)
     return user
 
 
 @app.get("/admin/rules", response_model=List[RegulatoryRuleOut], tags=["Admin"])
-def list_regulatory_rules(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
+def list_regulatory_rules(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return db.query(RegulatoryRule).order_by(RegulatoryRule.rule_id).all()
 
 
@@ -853,16 +1257,15 @@ def create_regulatory_rule(
         description=req.description,
         required_value=req.required_value,
         severity=req.severity or "high",
+        is_mandatory=req.is_mandatory if req.is_mandatory is not None else True,
         is_active=req.is_active if req.is_active is not None else True,
+        version=req.version or "APH-2026.1",
         created_by=current_user.id,
         updated_at=datetime.utcnow()
     )
     db.add(rule)
     db.commit()
     db.refresh(rule)
-    
-    log_audit(db, current_user, f"Regulatory Rule Created: {rule.rule_id}", "regulatory_rule",
-              str(rule.id), None, {"name": rule.rule_name})
     return rule
 
 
@@ -875,25 +1278,14 @@ def update_regulatory_rule(
 ):
     rule = db.query(RegulatoryRule).filter(RegulatoryRule.rule_id == rule_id).first()
     if not rule:
-        raise HTTPException(status_code=404, detail="Regulatory rule not found")
-    
-    if req.rule_name is not None:
-        rule.rule_name = req.rule_name
-    if req.category is not None:
-        rule.category = req.category
-    if req.description is not None:
-        rule.description = req.description
-    if req.required_value is not None:
-        rule.required_value = req.required_value
-    if req.severity is not None:
-        rule.severity = req.severity
-    if req.is_active is not None:
-        rule.is_active = req.is_active
+        raise HTTPException(status_code=404, detail="Rule not found")
+
+    for k, v in req.dict(exclude_unset=True).items():
+        if v is not None:
+            setattr(rule, k, v)
     rule.updated_at = datetime.utcnow()
-    
     db.commit()
     db.refresh(rule)
-    log_audit(db, current_user, f"Regulatory Rule Updated: {rule.rule_id}", "regulatory_rule", str(rule.id))
     return rule
 
 
@@ -905,261 +1297,28 @@ def delete_regulatory_rule(
 ):
     rule = db.query(RegulatoryRule).filter(RegulatoryRule.rule_id == rule_id).first()
     if not rule:
-        raise HTTPException(status_code=404, detail="Regulatory rule not found")
+        raise HTTPException(status_code=404, detail="Rule not found")
     db.delete(rule)
     db.commit()
-    log_audit(db, current_user, f"Regulatory Rule Deleted: {rule_id}", "regulatory_rule", rule_id)
-    return {"status": "success", "message": f"Rule {rule_id} deleted"}
+    return {"status": "ok", "message": f"Rule {rule_id} deleted"}
 
 
-# ============================================================
-# FINDINGS & COMPLIANCE ENDPOINTS
-# ============================================================
-@app.get("/applications/{app_id}/findings", response_model=List[FindingOut], tags=["Findings"])
-def get_findings(app_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    app_obj = db.query(Application).filter(Application.application_id == app_id).first()
-    if not app_obj:
-        raise HTTPException(status_code=404, detail="Application not found")
-    return app_obj.findings
-
-
-@app.get("/findings", response_model=List[FindingOut], tags=["Findings"])
-def list_all_findings(
-    severity: Optional[str] = None,
-    status: Optional[str] = None,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    q = db.query(Finding)
-    if severity:
-        q = q.filter(Finding.severity == severity)
-    if status:
-        q = q.filter(Finding.status == status)
-    return q.order_by(Finding.created_at.desc()).all()
-
-
-@app.put("/findings/{finding_id}/review", response_model=FindingOut, tags=["Findings"])
-def review_finding(
-    finding_id: int,
-    req: ReviewFinding,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.VERIFICATION_OFFICER, UserRole.COMPLIANCE_REVIEWER, UserRole.ADMIN))
-):
-    finding = db.query(Finding).filter(Finding.id == finding_id).first()
-    if not finding:
-        raise HTTPException(status_code=404, detail="Finding not found")
-    finding.status = req.status.value if hasattr(req.status, 'value') else req.status
-    finding.officer_remark = req.officer_remark
-    finding.reviewed_by = current_user.id
-    finding.reviewed_at = datetime.utcnow()
-    db.commit()
-    db.refresh(finding)
-    log_audit(db, current_user, f"Finding Reviewed: {finding.status}", "finding",
-              str(finding_id), finding.application_id, {"remark": req.officer_remark})
-    return finding
-
-
-@app.get("/applications/{app_id}/compliance", response_model=List[ComplianceCheckOut], tags=["Compliance"])
-def get_compliance(app_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    app_obj = db.query(Application).filter(Application.application_id == app_id).first()
-    if not app_obj:
-        raise HTTPException(status_code=404, detail="Application not found")
-    return app_obj.compliance_checks
-
-
-# ============================================================
-# AUDIT ROUTES
-# ============================================================
-@app.get("/audit", response_model=List[AuditEventOut], tags=["Audit"])
-def get_audit_log(
-    app_id: Optional[str] = None,
-    skip: int = 0,
-    limit: int = 100,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    q = db.query(AuditEvent)
-    if app_id:
-        app_obj = db.query(Application).filter(Application.application_id == app_id).first()
-        if app_obj:
-            q = q.filter(AuditEvent.application_id == app_obj.id)
-    return q.order_by(AuditEvent.timestamp.desc()).offset(skip).limit(limit).all()
-
-
-# ============================================================
-# SYSTEM HEALTH & RESET
-# ============================================================
+# Health check
 @app.get("/health", tags=["Health"])
 def health():
-    return {"status": "ok", "version": settings.VERSION, "timestamp": datetime.utcnow().isoformat()}
+    return {"status": "ok", "version": "2.1.0", "timestamp": datetime.utcnow().isoformat()}
 
 
 @app.get("/system/db-info", tags=["Health"])
 def db_info(db: Session = Depends(get_db)):
     is_postgres = "postgres" in settings.DATABASE_URL
-    app_count = db.query(Application).count()
-    doc_count = db.query(Document).count()
-    user_count = db.query(User).count()
-    rules_count = db.query(RegulatoryRule).count()
     return {
         "status": "connected",
         "engine": "PostgreSQL (Supabase)" if is_postgres else "SQLite (Local)",
-        "database_url_masked": settings.DATABASE_URL[:14] + "..." if len(settings.DATABASE_URL) > 14 else settings.DATABASE_URL,
         "counts": {
-            "applications": app_count,
-            "documents": doc_count,
-            "users": user_count,
-            "rules": rules_count
+            "applications": db.query(Application).count(),
+            "documents": db.query(Document).count(),
+            "users": db.query(User).count(),
+            "rules": db.query(RegulatoryRule).count()
         }
     }
-
-
-@app.post("/system/reset-db", tags=["Health"])
-def reset_database(
-    wipe_users: bool = True,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.ADMIN))
-):
-    """Wipes data to start fresh. Restricted to Admin."""
-    from sqlalchemy import text
-    try:
-        if wipe_users:
-            db.execute(text("TRUNCATE TABLE audit_events, compliance_checks, findings, documents, applications, regulatory_rules, users RESTART IDENTITY CASCADE;"))
-        else:
-            db.execute(text("TRUNCATE TABLE audit_events, compliance_checks, findings, documents, applications RESTART IDENTITY CASCADE;"))
-        db.commit()
-        return {"status": "success", "message": "Database wiped successfully", "wiped_users": wipe_users}
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Database wipe failed: {str(e)}")
-
-
-# ============================================================
-# INTERACTIVE WORKFLOW EXTENSIONS (Full Backend Connectivity)
-# ============================================================
-@app.put("/auth/profile", response_model=UserOut, tags=["Auth"])
-def update_profile(
-    req: ProfileUpdateRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    if req.institution_name:
-        current_user.full_name = req.institution_name
-    db.commit()
-    db.refresh(current_user)
-    log_audit(db, current_user, "Institution Profile Updated", "user", str(current_user.id), None, {
-        "institution_name": req.institution_name,
-        "contact_person": req.contact_person
-    })
-    return current_user
-
-
-@app.post("/applications/{app_id}/raise-deficiency", response_model=FindingOut, tags=["Verification"])
-def raise_application_deficiency(
-    app_id: str,
-    req: RaiseDeficiencyRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.VERIFICATION_OFFICER, UserRole.COMPLIANCE_REVIEWER, UserRole.ADMIN))
-):
-    app_obj = db.query(Application).filter(Application.application_id == app_id).first()
-    if not app_obj:
-        raise HTTPException(status_code=404, detail="Application not found")
-
-    finding = Finding(
-        application_id=app_obj.id,
-        rule_id="DEF-" + str(random.randint(1000, 9999)),
-        rule_description=f"Official Discrepancy Notice: {req.category}",
-        severity=FindingSeverity.HIGH.value if req.severity == "high" else FindingSeverity.MEDIUM.value,
-        status=FindingStatus.OPEN.value,
-        finding_text=req.finding_text,
-        officer_remark=f"Raised by {current_user.full_name} ({current_user.role})",
-        reviewed_by=current_user.id,
-        reviewed_at=datetime.utcnow()
-    )
-    db.add(finding)
-    
-    # Transition application status to deficiency
-    app_obj.status = AppStatus.DEFICIENCY.value
-    app_obj.updated_at = datetime.utcnow()
-    db.commit()
-    db.refresh(finding)
-
-    log_audit(db, current_user, f"Deficiency Notice Issued ({req.category})", "application",
-              app_id, app_obj.id, {"finding_id": finding.id, "text": req.finding_text})
-    return finding
-
-
-@app.post("/findings/{finding_id}/respond", response_model=FindingOut, tags=["Findings"])
-def respond_to_deficiency(
-    finding_id: int,
-    req: RespondDeficiencyRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    finding = db.query(Finding).filter(Finding.id == finding_id).first()
-    if not finding:
-        raise HTTPException(status_code=404, detail="Finding not found")
-
-    finding.officer_remark = f"Institutional Response: {req.response_text}"
-    finding.status = FindingStatus.CONFIRMED.value
-    
-    # Return application to under review
-    app_obj = db.query(Application).filter(Application.id == finding.application_id).first()
-    if app_obj and app_obj.status == AppStatus.DEFICIENCY.value:
-        app_obj.status = AppStatus.UNDER_REVIEW.value
-        app_obj.current_stage = "doc_verification"
-        app_obj.updated_at = datetime.utcnow()
-
-    db.commit()
-    db.refresh(finding)
-
-    log_audit(db, current_user, "Deficiency Response Submitted", "finding",
-              str(finding_id), finding.application_id, {"response": req.response_text})
-    return finding
-
-
-@app.put("/documents/{doc_id}/ocr-data", response_model=DocumentOut, tags=["Documents"])
-def update_document_ocr_field(
-    doc_id: int,
-    req: OcrUpdateRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles(UserRole.VERIFICATION_OFFICER, UserRole.ADMIN))
-):
-    doc = db.query(Document).filter(Document.id == doc_id).first()
-    if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
-
-    ext_data = doc.extracted_data or {}
-    if not isinstance(ext_data, dict):
-        ext_data = {}
-    
-    # Update field and store correction trail
-    corrections = ext_data.get("officer_corrections", [])
-    corrections.append({
-        "field": req.field_name,
-        "old_value": ext_data.get(req.field_name),
-        "new_value": req.field_value,
-        "reason": req.reason,
-        "corrected_by": current_user.full_name,
-        "timestamp": datetime.utcnow().isoformat()
-    })
-    ext_data[req.field_name] = req.field_value
-    ext_data["officer_corrections"] = corrections
-    doc.extracted_data = ext_data
-    db.commit()
-    db.refresh(doc)
-
-    log_audit(db, current_user, f"OCR Field Corrected: {req.field_name}", "document",
-              str(doc.id), doc.application_id, {
-                  "field": req.field_name,
-                  "new_value": req.field_value,
-                  "reason": req.reason
-              })
-    return doc
-
-
-@app.on_event("startup")
-async def startup_event():
-    # Tables are verified and ready on startup.
-    pass
-

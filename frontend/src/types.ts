@@ -1,9 +1,13 @@
 export type UserRole =
   | 'institution'
+  | 'officer'
+  | 'scrutiny_officer'
+  | 'compliance_officer'
+  | 'chairman'
+  | 'admin'
   | 'verification_officer'
   | 'compliance_reviewer'
-  | 'decision_maker'
-  | 'admin';
+  | 'decision_maker';
 
 export interface User {
   id: number | string;
@@ -11,45 +15,191 @@ export interface User {
   full_name: string;
   role: UserRole | string;
   is_active: boolean;
+  institution_id?: number;
   created_at: string;
+}
+
+export interface Institution {
+  id: number;
+  aicte_id: string;
+  name: string;
+  institution_type?: string;
+  category?: string;
+  address?: string;
+  state?: string;
+  district?: string;
+  pincode?: string;
+  contact_person?: string;
+  email?: string;
+  phone?: string;
+  university_affiliation?: string;
+  established_year?: number;
+  campus_acres?: number;
+  total_intake?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ApplicationStatus =
+  | 'DRAFT'
+  | 'VALIDATING'
+  | 'ACTION_REQUIRED'
+  | 'READY_FOR_REVIEW'
+  | 'UNDER_OFFICER_REVIEW'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'UNDER_SCRUTINY'
+  | 'UNDER_COMPLIANCE_REVIEW'
+  | 'CLARIFICATION_REQUESTED'
+  | 'DECISION_RECORDED'
+  | string;
+
+export interface DocumentVersion {
+  id: number;
+  version_number: number;
+  filename: string;
+  file_size: number;
+  sha256_hash: string;
+  uploaded_at: string;
+  extracted_data?: Record<string, any>;
+  verification_result?: string;
+  change_reason?: string;
+}
+
+export interface Document {
+  id: number | string;
+  application_id?: number | string;
+  doc_type: string;
+  filename: string;
+  file_size?: number;
+  sha256_hash?: string;
+  version?: number;
+  is_latest?: boolean;
+  status: 'valid' | 'deficient' | 'pending' | 'flagged' | 'not_verifiable' | string;
+  verification_result?: string;
+  extracted_data?: Record<string, any>;
+  uploaded_at: string;
+  expires_at?: string;
+  versions?: DocumentVersion[];
+}
+
+export interface Finding {
+  id: number;
+  application_id?: number | string;
+  document_id?: number | string;
+  check_type?: 'COMPLETENESS' | 'EXTRACTION' | 'CONSISTENCY' | 'MANIPULATION' | 'EXTERNAL_AUTH' | 'COMPLIANCE' | 'OFFICER_REVIEW' | string;
+  rule_id: string;
+  rule_description: string;
+  title?: string;
+  description?: string;
+  finding_type?: string;
+  severity: 'low' | 'medium' | 'high' | 'critical' | string;
+  status: 'open' | 'confirmed' | 'dismissed' | 'resolved' | string;
+  finding_text: string;
+  detected_issue?: string;
+  why_attention_needed?: string;
+  recommended_action?: string;
+  ai_suggestion?: string;
+  evidence?: any;
+  page_number?: number;
+  officer_remark?: string;
+  reviewed_at?: string;
+  created_at: string;
+}
+
+export interface ComplianceCheck {
+  id: number;
+  application_id?: number | string;
+  rule_id: string;
+  rule_name: string;
+  category: string;
+  result: 'PASS' | 'FAIL' | 'WARNING' | 'NOT_VERIFIABLE' | string;
+  details: string;
+  evidence_value?: string;
+  required_value?: string;
+  rule_version?: string;
+  checked_at?: string;
+}
+
+export interface ValidationRun {
+  id: number;
+  run_number: number;
+  status: string;
+  scrutiny_score: number;
+  rule_version: string;
+  summary?: string;
+  passed_checks?: string[];
+  warnings?: string[];
+  external_unverified?: string[];
+  created_at: string;
+}
+
+export interface ReviewAction {
+  id: number;
+  officer_id: number;
+  officer_name: string;
+  officer_role: string;
+  action_type: 'FORWARDED_TO_COMPLIANCE' | 'FORWARDED_TO_DECISION' | 'CLARIFICATION_REQUESTED' | 'OBSERVATION' | string;
+  comments: string;
+  created_at: string;
+}
+
+export interface DecisionRecord {
+  id: number;
+  decision: 'CLEARED' | 'DEFICIENCY' | 'REJECTED' | string;
+  reasons: string;
+  order_number: string;
+  decision_maker_name: string;
+  authority_designation: string;
+  decided_at: string;
+}
+
+export interface Notification {
+  id: number;
+  title: string;
+  message: string;
+  type: 'DEFICIENCY_ALERT' | 'STATUS_CHANGE' | 'CLARIFICATION_REQUEST' | 'DECISION_RECORDED' | string;
+  is_read: boolean;
+  created_at: string;
+  application_id?: number;
+}
+
+export interface PipelineInfo {
+  application_id: string;
+  institution_name: string;
+  current_stage: string;
+  status: string;
+  scrutiny_score: number;
+  stages: any[];
 }
 
 export interface Application {
   id: string | number;
-  application_id?: string;
-  institution_id?: string;
+  application_id: string;
+  institution_id?: number;
   institution_name: string;
   institution_type?: string;
   category?: string;
   application_type?: string;
+  academic_year?: string;
   applied_for?: string;
   region?: string;
   state?: string;
   city?: string;
-  status:
-    | 'submitted'
-    | 'under_review'
-    | 'doc_verified'
-    | 'compliance_review'
-    | 'decision_pending'
-    | 'deficiency'
-    | 'cleared'
-    | 'rejected'
-    | string;
+  status: ApplicationStatus;
   submitted_at: string;
-  updated_at?: string;
+  updated_at: string;
+  scrutiny_score: number;
   score?: number;
-  scrutiny_score?: number;
 
-  // 5-Stage Pipeline Workflow tracking
-  current_stage?: 'submission' | 'ai_validation' | 'doc_verification' | 'compliance_review' | 'decision' | 'completed' | string;
-  verification_status?: 'pending' | 'verified' | 'evidence_requested' | string;
+  current_stage?: 'submission' | 'ready_for_review' | 'scrutiny' | 'compliance' | 'decision' | 'completed' | string;
+  verification_status?: string;
   verification_officer_id?: number;
   verification_remarks?: string;
   verification_completed_at?: string;
-  compliance_status?: 'pending' | 'completed' | string;
+  compliance_status?: string;
   compliance_reviewer_id?: number;
-  compliance_recommendation?: 'RECOMMENDED_APPROVAL' | 'RECOMMENDED_DEFICIENCY' | 'RECOMMENDED_INSPECTION' | string;
+  compliance_recommendation?: string;
   compliance_remarks?: string;
   compliance_completed_at?: string;
   decision_maker_id?: number;
@@ -57,62 +207,44 @@ export interface Application {
   decision_remarks?: string;
   decision_order_no?: string;
   decision_at?: string;
+
+  // Unified Officer & Certificate tracking
+  officer_id?: number;
+  officer_name?: string;
+  officer_suggestions?: string;
+  officer_reviewed_at?: string;
+  certificate_issued?: boolean;
+  certificate_number?: string;
+  certificate_url?: string;
+  ai_suggestions?: Array<{
+    rule_id: string;
+    document: string;
+    detected_issue?: string;
+    suggestion: string;
+    severity: string;
+  }>;
+
+  documents?: Document[];
+  findings?: Finding[];
+  compliance_checks?: ComplianceCheck[];
+  validation_runs?: ValidationRun[];
+  review_actions?: ReviewAction[];
+  decision_record?: DecisionRecord;
 }
 
-export interface Document {
-  id: string | number;
-  application_id?: string;
-  doc_type: string;
-  filename: string;
-  file_size?: number;
-  sha256_hash?: string;
-  status: 'verified' | 'pending' | 'processing' | 'flagged' | 'evidence_requested' | string;
-  verification_result?: string;
-  extracted_data?: Record<string, any>;
-  uploaded_at?: string;
-  created_at?: string;
-  page_count?: number;
-  confidence_score?: number;
-  is_tampered?: boolean;
-  file_path?: string;
-  expires_at?: string;
-}
-
-export interface Finding {
+export interface RegulatoryRule {
   id: number;
-  application_id?: string;
-  document_id?: string;
-  rule_id?: string;
-  rule_description?: string;
-  finding_type?: string;
-  title?: string;
-  description?: string;
-  finding_text?: string;
-  severity: 'low' | 'medium' | 'high' | 'critical' | string;
-  status: 'open' | 'confirmed' | 'dismissed' | 'escalated' | string;
-  evidence?: any;
-  officer_remark?: string;
-  page_number?: number;
-  reviewed_at?: string;
-  created_at: string;
-}
-
-export interface ComplianceCheck {
-  id: number;
-  application_id?: string;
-  rule_id?: string;
+  rule_id: string;
   rule_name: string;
-  clause_reference?: string;
   category: string;
-  is_compliant?: boolean;
-  passed_items?: number;
-  total_items?: number;
-  score?: number;
-  result?: 'pass' | 'fail' | 'warning' | 'not_applicable' | string;
-  details: string;
-  evidence_value?: string;
+  description?: string;
   required_value?: string;
-  checked_at?: string;
+  severity: string;
+  is_mandatory: boolean;
+  is_active: boolean;
+  version: string;
+  created_by?: number;
+  updated_at: string;
 }
 
 export interface AuditEvent {
@@ -126,71 +258,50 @@ export interface AuditEvent {
   app_id?: string;
   details?: any;
   ip_address?: string;
-  timestamp?: string;
+  timestamp: string;
   created_at?: string;
 }
 
 export interface DashboardStats {
+  institution_profile?: {
+    name: string;
+    aicte_id: string;
+    type: string;
+    state: string;
+    city: string;
+    affiliation: string;
+    campus_acres: number;
+  };
   total_applications: number;
-  under_review: number;
-  deficiencies: number;
-  cleared: number;
+  draft_applications: number;
+  action_required_applications: number;
+  ready_for_review_applications: number;
+  under_review_applications: number;
+  decision_recorded_applications: number;
+
+  // Compatibility
+  under_review?: number;
+  deficiencies?: number;
+  cleared?: number;
   pending?: number;
   rejected?: number;
   total_documents?: number;
   total_findings?: number;
   open_findings?: number;
-  avg_score?: number;
   avg_scrutiny_score?: number;
+  avg_score?: number;
+  weekly_submissions?: any[];
+  status_distribution?: Record<string, number>;
   status_breakdown?: Record<string, number>;
   type_breakdown?: Record<string, number>;
   region_breakdown?: Record<string, number>;
-  monthly_trend?: any[];
-  severity_breakdown?: Record<string, number>;
-  status_distribution?: Record<string, number>;
-  type_distribution?: Record<string, number>;
-  region_distribution?: Record<string, number>;
-  weekly_submissions?: { week: string; count: number; date: string }[];
-  compliance_summary?: { pass: number; fail: number; warning: number; total: number };
-  severity_distribution?: Record<string, number>;
 }
 
 export interface AuthResponse {
   access_token: string;
   token_type: string;
-  user_id: number | string;
+  user_id: number;
   full_name: string;
   role: string;
-}
-
-export interface RegulatoryRule {
-  id: number;
-  rule_id: string;
-  rule_name: string;
-  category: string;
-  description?: string;
-  required_value?: string;
-  severity: string;
-  is_active: boolean;
-  created_by?: number;
-  updated_at: string;
-}
-
-export interface PipelineStageStep {
-  step: number;
-  name: string;
-  role: string;
-  actor: string;
-  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
-  completed_at?: string;
-  summary: string;
-}
-
-export interface PipelineInfo {
-  application_id: string;
-  institution_name: string;
-  current_stage: string;
-  status: string;
-  scrutiny_score: number;
-  stages: PipelineStageStep[];
+  institution_id?: number;
 }

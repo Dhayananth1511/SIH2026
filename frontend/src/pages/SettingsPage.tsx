@@ -49,7 +49,7 @@ export default function SettingsPage() {
   const fetchRules = () => {
     setLoadingRules(true);
     getRegulatoryRules()
-      .then(r => setRulesList(r))
+      .then((r: any) => setRulesList(r))
       .catch(() => setRulesList([]))
       .finally(() => setLoadingRules(false));
   };

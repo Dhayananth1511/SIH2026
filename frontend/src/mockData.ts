@@ -4,6 +4,11 @@ export const MOCK_APPLICATIONS: Application[] = [];
 
 export const MOCK_DASHBOARD_STATS: DashboardStats = {
   total_applications: 0,
+  draft_applications: 0,
+  action_required_applications: 0,
+  ready_for_review_applications: 0,
+  under_review_applications: 0,
+  decision_recorded_applications: 0,
   under_review: 0,
   deficiencies: 0,
   cleared: 0,
