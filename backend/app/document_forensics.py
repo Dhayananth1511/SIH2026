@@ -6,8 +6,15 @@ try:
     import cv2
 except ImportError:
     cv2 = None
-import numpy as np
+
+try:
+    import numpy as np
+except ImportError:
+    np = None
+
 from PIL import Image, ExifTags
+
+
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from urllib.parse import urlparse
