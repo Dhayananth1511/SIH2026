@@ -18,8 +18,8 @@ logger = logging.getLogger("gemini_service")
 class GeminiService:
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or getattr(settings, "GEMINI_API_KEY", None) or os.environ.get("GEMINI_API_KEY", "")
-        self.primary_model = "gemini-2.5-flash"
-        self.fallback_model = "gemini-1.5-flash"
+        self.primary_model = "gemini-3-flash-preview"
+        self.fallback_model = "gemini-2.5-flash"
         self.base_url = "https://generativelanguage.googleapis.com/v1beta/models"
 
     def set_api_key(self, key: str):
@@ -75,22 +75,26 @@ class GeminiService:
                 "parts": [{"text": system_instruction}]
             }
 
-        url = f"{self.base_url}/{target_model}:generateContent?key={self.api_key}"
+        models_to_try = [target_model, "gemini-2.5-flash", "gemini-flash-latest"]
+        res = None
 
         try:
             with httpx.Client(timeout=45.0) as client:
-                res = client.post(url, json=payload)
-                if res.status_code == 404 and target_model != self.fallback_model:
-                    # Fallback to gemini-1.5-flash
-                    url_fb = f"{self.base_url}/{self.fallback_model}:generateContent?key={self.api_key}"
-                    res = client.post(url_fb, json=payload)
+                for mod in models_to_try:
+                    url = f"{self.base_url}/{mod}:generateContent?key={self.api_key}"
+                    res = client.post(url, json=payload)
+                    if res.status_code == 200:
+                        target_model = mod
+                        break
+                    if res.status_code not in (404, 429):
+                        break
 
-                if res.status_code != 200:
-                    logger.error(f"Gemini API returned status {res.status_code}: {res.text}")
+                if not res or res.status_code != 200:
+                    logger.error(f"Gemini API returned status {res.status_code if res else 'None'}: {res.text if res else ''}")
                     return {
                         "_gemini_live": False,
-                        "error": f"Gemini API Error {res.status_code}",
-                        "raw_response": res.text[:400]
+                        "error": f"Gemini API Error {res.status_code if res else 'timeout'}",
+                        "raw_response": res.text[:400] if res else ""
                     }
 
                 data = res.json()

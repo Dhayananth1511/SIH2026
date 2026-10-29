@@ -139,6 +139,7 @@ class Application(Base):
     certificate_number = Column(String(100), nullable=True)
     certificate_url = Column(String(255), nullable=True)
     ai_suggestions = Column(JSON, nullable=True)  # Overall AI suggestions for the institute
+    scrutiny_sections_reviewed = Column(JSON, default=dict)  # Tracks completed scrutiny checklist sections
 
     institution = relationship("Institution", back_populates="applications", foreign_keys=[institution_id])
     submitted_by_user = relationship("User", back_populates="applications", foreign_keys=[submitted_by])
@@ -153,6 +154,7 @@ class Application(Base):
     compliance_checks = relationship("ComplianceCheck", back_populates="application", cascade="all, delete-orphan")
     validation_runs = relationship("ValidationRun", back_populates="application", cascade="all, delete-orphan")
     review_actions = relationship("ReviewAction", back_populates="application", cascade="all, delete-orphan")
+    clarifications = relationship("Clarification", back_populates="application", cascade="all, delete-orphan")
     decision_record = relationship("DecisionRecord", back_populates="application", uselist=False, cascade="all, delete-orphan")
     authority_verifications = relationship("AuthorityVerification", back_populates="application", cascade="all, delete-orphan")
     infrastructure_evidence = relationship("InfrastructureEvidence", back_populates="application", cascade="all, delete-orphan")
@@ -176,6 +178,10 @@ class Document(Base):
     uploaded_at = Column(DateTime, default=datetime.utcnow)
     uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     expires_at = Column(DateTime, nullable=True)
+    officer_verification_outcome = Column(String(50), nullable=True) # VERIFIED, MISMATCH_DETECTED, VERIFICATION_PENDING, MANUAL_REVIEW_REQUIRED, SOURCE_UNAVAILABLE
+    officer_verification_notes = Column(Text, nullable=True)
+    officer_verified_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    officer_verified_at = Column(DateTime, nullable=True)
 
     application = relationship("Application", back_populates="documents")
     versions = relationship("DocumentVersion", back_populates="document", cascade="all, delete-orphan")
@@ -274,8 +280,42 @@ class RegulatoryRule(Base):
     is_mandatory = Column(Boolean, default=True)
     is_active = Column(Boolean, default=True)
     version = Column(String(50), default="APH-2026.1")
+    source_reference = Column(String(255), default="AICTE Approval Process Handbook (APH 2026-27)")
+    applicable_types = Column(JSON, default=list)
+    effective_period = Column(String(50), default="2026-2027")
+    validation_method = Column(String(50), default="AUTOMATED_AND_MANUAL")
+    status = Column(String(50), default="PUBLISHED")
+    change_rationale = Column(Text, nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Clarification(Base):
+    """
+    Formal, auditable clarification thread between AICTE Approval Officer and Institution.
+    Maintains complete message history, evidence references, due dates, and resolution milestones.
+    """
+    __tablename__ = "clarifications"
+    id = Column(Integer, primary_key=True, index=True)
+    clarification_id = Column(String(50), unique=True, index=True, nullable=False) # e.g. CLR-2026-0001
+    application_id = Column(Integer, ForeignKey("applications.id"), nullable=False)
+    officer_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    subject = Column(String(255), nullable=False)
+    related_item_type = Column(String(50), default="document") # document, finding, compliance_rule, general
+    related_item_id = Column(String(100), nullable=True) # doc type or rule_id or finding_id
+    question_text = Column(Text, nullable=False)
+    evidence_reference = Column(Text, nullable=True)
+    due_date = Column(DateTime, nullable=True)
+    status = Column(String(50), default="PENDING_INSTITUTION") # PENDING_INSTITUTION, RESPONSE_SUBMITTED, RESOLVED, REOPENED
+    institution_response = Column(Text, nullable=True)
+    response_attachment = Column(String(255), nullable=True)
+    response_submitted_at = Column(DateTime, nullable=True)
+    messages = Column(JSON, default=list) # conversation timeline [{sender_role, sender_name, timestamp, text, attachment}]
+    created_at = Column(DateTime, default=datetime.utcnow)
+    resolved_at = Column(DateTime, nullable=True)
+
+    application = relationship("Application", back_populates="clarifications")
+    officer = relationship("User", foreign_keys=[officer_id])
 
 
 class ReviewAction(Base):
@@ -288,7 +328,6 @@ class ReviewAction(Base):
     action_type = Column(String(50)) # OBSERVATION, CLARIFICATION_REQUESTED, FORWARDED_TO_COMPLIANCE, FORWARDED_TO_DECISION, DECISION_RECORDED
     comments = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-
     application = relationship("Application", back_populates="review_actions")
 
 

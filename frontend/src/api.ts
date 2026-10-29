@@ -15,7 +15,8 @@ import type {
   AuthorityVerification,
   InfrastructureEvidence,
   CategoryChecklistItem,
-  OfficialScrutinySheet
+  OfficialScrutinySheet,
+  Clarification
 } from './types';
 
 export const formatApiUrl = (raw: string | undefined | null): string | null => {
@@ -568,5 +569,123 @@ export const uploadInfrastructurePhoto = async (
 
 export const verifyCryptographicSeal = async (hashSeal: string): Promise<any> => {
   return cachedGet<any>(`/regulatory/verify-seal/${hashSeal}`);
+};
+
+// ============================================================================
+// Document Authentication & Officer Verification Outcome APIs
+// ============================================================================
+export const recordDocumentVerifyOutcome = async (
+  appId: string,
+  docId: number | string,
+  payload: {
+    outcome: string;
+    officer_notes?: string;
+    source_identified?: string;
+    evidence_reference?: string;
+  }
+): Promise<Document> => {
+  clearClientCache();
+  const res = await api.post<Document>(`/applications/${appId}/documents/${docId}/verify-outcome`, payload);
+  return res.data;
+};
+
+export const recordScrutinyStepReview = async (
+  appId: string,
+  payload: {
+    section_key: string;
+    status: string;
+    remarks?: string;
+  }
+): Promise<any> => {
+  clearClientCache();
+  const res = await api.post<any>(`/applications/${appId}/scrutiny-step-review`, payload);
+  return res.data;
+};
+
+export const recordComplianceRuleReview = async (
+  appId: string,
+  payload: {
+    rule_id: string;
+    officer_result: string;
+    officer_remarks?: string;
+  }
+): Promise<any> => {
+  clearClientCache();
+  const res = await api.post<any>(`/applications/${appId}/compliance-rule-review`, payload);
+  return res.data;
+};
+
+// ============================================================================
+// Traceable Clarifications APIs
+// ============================================================================
+export const getApplicationClarifications = async (appId: string): Promise<Clarification[]> => {
+  return cachedGet<Clarification[]>(`/applications/${appId}/clarifications`);
+};
+
+export const createClarificationQuery = async (
+  appId: string,
+  payload: {
+    subject: string;
+    question_text: string;
+    related_item_type?: string;
+    related_item_id?: string;
+    evidence_reference?: string;
+    due_date?: string;
+  }
+): Promise<Clarification> => {
+  clearClientCache();
+  const res = await api.post<Clarification>(`/applications/${appId}/clarifications`, payload);
+  return res.data;
+};
+
+export const replyToClarification = async (
+  clarificationId: string,
+  payload: {
+    reply_text: string;
+    attachment_url?: string;
+  }
+): Promise<Clarification> => {
+  clearClientCache();
+  const res = await api.post<Clarification>(`/clarifications/${clarificationId}/reply`, payload);
+  return res.data;
+};
+
+export const resolveClarification = async (
+  clarificationId: string,
+  reopen: boolean = false,
+  remarks?: string
+): Promise<Clarification> => {
+  clearClientCache();
+  const res = await api.put<Clarification>(`/clarifications/${clarificationId}/resolve`, null, {
+    params: { reopen, remarks }
+  });
+  return res.data;
+};
+
+export const getAllClarifications = async (status?: string): Promise<Clarification[]> => {
+  return cachedGet<Clarification[]>('/clarifications', { params: status ? { status } : {} });
+};
+
+// ============================================================================
+// AI & Integrations Testing and Admin APIs
+// ============================================================================
+export const testAiConnection = async (): Promise<any> => {
+  const res = await api.post<any>('/ai/test-connection');
+  return res.data;
+};
+
+export const getSystemLogs = async (params?: {
+  category?: string;
+  severity?: string;
+  actor?: string;
+  app_id?: string;
+  search?: string;
+  limit?: number;
+}): Promise<any[]> => {
+  return cachedGet<any[]>('/admin/system-logs', { params });
+};
+
+export const getRolesPermissions = async (): Promise<any> => {
+  return cachedGet<any>('/admin/roles-permissions');
 };
 

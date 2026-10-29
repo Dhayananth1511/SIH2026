@@ -157,7 +157,7 @@ export default function LoginPage({ onNavigateToSignUp, onLoginSuccess }: Props)
                   type="text"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
-                  placeholder="e.g. admin@gov.in or Arun@gov.in"
+                  placeholder="name@domain.gov.in or institute@domain.edu.in"
                   required
                   style={{
                     width: '100%',
@@ -241,83 +241,7 @@ export default function LoginPage({ onNavigateToSignUp, onLoginSuccess }: Props)
               </button>
             </form>
 
-            {/* Authorized Departmental Sign-In */}
-            <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '11.5px', fontWeight: '700', color: '#64748b', marginBottom: '8px', textAlign: 'center' }}>
-                Authorized Ministry Credentials (Fast Sign-In):
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={() => {
-                    setEmail('arun@gov.in');
-                    setPassword('arun');
-                    apiLogin('arun@gov.in', 'arun').then(res => {
-                      const user: User = {
-                        id: res.user_id,
-                        email: 'arun@gov.in',
-                        full_name: res.full_name || 'Arun (Scrutiny Officer)',
-                        role: res.role || 'officer',
-                        is_active: true,
-                        created_at: new Date().toISOString()
-                      };
-                      login(res.access_token, user);
-                      if (onLoginSuccess) onLoginSuccess();
-                    }).catch(err => setError(err?.message || 'Login failed'));
-                  }}
-                  style={{
-                    background: '#f8fafc',
-                    border: '1px solid #cbd5e1',
-                    color: '#0f172a',
-                    padding: '8px 10px',
-                    borderRadius: '6px',
-                    fontSize: '11.5px',
-                    fontWeight: '700',
-                    cursor: 'pointer',
-                    textAlign: 'center'
-                  }}
-                >
-                  🏛️ Scrutiny Officer (arun@gov.in)
-                </button>
-
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={() => {
-                    setEmail('admin@gov.in');
-                    setPassword('admin');
-                    apiLogin('admin@gov.in', 'admin').then(res => {
-                      const user: User = {
-                        id: res.user_id,
-                        email: 'admin@gov.in',
-                        full_name: res.full_name || 'Administrator',
-                        role: res.role || 'admin',
-                        is_active: true,
-                        created_at: new Date().toISOString()
-                      };
-                      login(res.access_token, user);
-                      if (onLoginSuccess) onLoginSuccess();
-                    }).catch(err => setError(err?.message || 'Login failed'));
-                  }}
-                  style={{
-                    background: '#f8fafc',
-                    border: '1px solid #cbd5e1',
-                    color: '#0f172a',
-                    padding: '8px 10px',
-                    borderRadius: '6px',
-                    fontSize: '11.5px',
-                    fontWeight: '700',
-                    cursor: 'pointer',
-                    textAlign: 'center'
-                  }}
-                >
-                  ⚙️ System Administrator
-                </button>
-              </div>
-            </div>
-
-            <div style={{ textAlign: 'center', marginTop: '16px', fontSize: '12.5px', color: '#64748b' }}>
+            <div style={{ textAlign: 'center', marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #e2e8f0', fontSize: '12.5px', color: '#64748b' }}>
               Institution / College applying for approval?{' '}
               <button
                 type="button"

@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "aicte-regulatory-super-secret-production-key-2026"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
-    DATABASE_URL: str = "sqlite:///./aicte.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/postgres"
     UPLOAD_DIR: str = "./storage/uploads"
     MAX_UPLOAD_MB: int = 10
     CORS_ORIGINS: Union[List[str], str] = ["http://localhost:5173", "http://127.0.0.1:5173"]

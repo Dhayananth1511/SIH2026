@@ -787,6 +787,158 @@ textarea.form-control {
 }
 
 /* ==========================================================================
+   Comprehensive Responsive System for All Screen Sizes
+   (Mobile <480px, Tablet <768px, Laptop <1024px, Desktop >=1024px)
+   ========================================================================== */
+
+/* Chart Card & Charts Grid Utilities */
+.chart-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.chart-card:hover {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+}
+
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.two-col-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.three-col-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+/* Table Responsive Scrolling Wrapper */
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-bottom: 12px;
+  border-radius: var(--radius-md);
+}
+
+.table-responsive table {
+  min-width: 600px;
+}
+
+/* Laptop & Tablet Breakpoint (< 1024px) */
+@media (max-width: 1024px) {
+  .page-container {
+    padding: 20px 20px 60px 20px;
+    max-width: 100%;
+  }
+
+  .three-col-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Tablet & Mobile Breakpoint (< 768px) */
+@media (max-width: 768px) {
+  .app-container {
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  .official-header {
+    height: 56px !important;
+    padding: 0 12px !important;
+  }
+
+  .gov-indicator {
+    display: none !important;
+  }
+
+  .header-title-group span {
+    display: none !important;
+  }
+
+  .user-info-text {
+    display: none !important;
+  }
+
+  .page-container {
+    padding: 12px 12px 50px 12px !important;
+  }
+
+  .two-col-grid,
+  .three-col-grid,
+  .charts-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px;
+  }
+
+  .two-pane-desk {
+    flex-direction: column !important;
+  }
+
+  .two-pane-desk > * {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .modal-overlay {
+    padding: 10px !important;
+  }
+
+  .modal-card {
+    padding: 16px !important;
+    max-height: 94vh !important;
+    max-width: 100% !important;
+  }
+
+  .sub-nav-tabs {
+    overflow-x: auto;
+    white-space: nowrap;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Small Smartphone Breakpoint (< 480px) */
+@media (max-width: 480px) {
+  html, body {
+    font-size: 13px;
+  }
+
+  .official-header {
+    height: 52px !important;
+    padding: 0 10px !important;
+  }
+
+  .header-left h1 {
+    font-size: 14px !important;
+  }
+
+  .page-container {
+    padding: 10px 10px 45px 10px !important;
+  }
+
+  .btn {
+    padding: 7px 12px !important;
+    font-size: 11.5px !important;
+  }
+
+  .btn-sm {
+    padding: 5px 8px !important;
+    font-size: 11px !important;
+  }
+}
+
+/* ==========================================================================
    Print Styles for Official Statutory Orders & Decrees
    ========================================================================== */
 @media print {
@@ -822,4 +974,6 @@ textarea.form-control {
     border: none !important;
   }
 }
+
+
 

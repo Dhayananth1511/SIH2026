@@ -1,14 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { IndianEmblem } from './Emblems';
-import { LogOut, Bell } from 'lucide-react';
+import { LogOut, Bell, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import Sidebar from './Sidebar';
 import LoginPage from '../pages/LoginPage';
 import SignUpPage from '../pages/SignUpPage';
 
 import InstitutionViews from '../views/InstitutionViews';
-import VerificationOfficerViews from '../views/VerificationOfficerViews';
-import ComplianceReviewerViews from '../views/ComplianceReviewerViews';
-import DecisionMakerViews from '../views/DecisionMakerViews';
+import OfficerPortalViews from '../views/OfficerPortalViews';
 import AdminViews from '../views/AdminViews';
 
 import { useAuth } from '../AuthContext';
@@ -16,7 +14,7 @@ import { getNotifications } from '../api';
 import type { Notification } from '../types';
 
 export default function Layout() {
-  const { user, logout, switchRole } = useAuth();
+  const { user, logout } = useAuth();
   const rawRole = (user?.role || 'institution').toLowerCase();
 
   const getRoleKey = (r: string) => {
@@ -38,12 +36,9 @@ export default function Layout() {
   };
 
   const currentRoleKey = getRoleKey(rawRole);
-  const isScrutiny = rawRole.includes('scrutiny') || rawRole.includes('verification') || rawRole === 'officer';
-  const isCompliance = rawRole.includes('compliance') || rawRole.includes('reviewer');
-  const isDecisionMaker = rawRole.includes('chairman') || rawRole.includes('decision');
 
   const getDefaultRolePage = (roleKey: string) => {
-    if (roleKey === 'officer') return 'vo-dashboard';
+    if (roleKey === 'officer') return 'officer-dashboard';
     if (roleKey === 'admin') return 'admin-dashboard';
     return 'inst-dashboard';
   };
@@ -57,9 +52,6 @@ export default function Layout() {
   const [currentPage, setCurrentPage] = useState<string>(() => {
     const token = localStorage.getItem('token');
     if (!token) {
-      if (typeof window !== 'undefined' && window.location.pathname.startsWith('/officer')) {
-        return 'vo-dashboard';
-      }
       return 'login';
     }
     const savedUser = localStorage.getItem('user');
@@ -76,9 +68,20 @@ export default function Layout() {
 
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotificationPopup, setShowNotificationPopup] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('sidebar_collapsed') === 'true';
+  });
+
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem('sidebar_collapsed', String(next));
+      return next;
+    });
+  };
 
   useEffect(() => {
-    if (user?.role && (currentPage === 'login' || currentPage === 'dashboard')) {
+    if (user?.role && (currentPage === 'login' || currentPage === 'dashboard' || currentPage === 'vo-dashboard')) {
       setCurrentPage(getDefaultRolePage(currentRoleKey));
     }
     // Fetch notifications if logged in
@@ -113,19 +116,53 @@ export default function Layout() {
 
   return (
     <div className="app-container">
-      {/* Sidebar with exact role menus */}
+      {/* Sidebar with exact role menus, white theme & open/close option */}
       <Sidebar
         currentPage={currentPage}
         onNavigate={page => setCurrentPage(page)}
         notificationCount={unreadCount}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={toggleSidebar}
       />
 
       {/* Main Content Area */}
       <div className="main-content-wrapper">
-        {/* Top Official Header (Section 12 - Government Design) */}
+        {/* Top Official Government Header */}
         <header className="official-header">
-          {/* Header Left */}
+          {/* Header Left with Sidebar Toggle Button */}
           <div className="header-left">
+            <button
+              id="header-sidebar-toggle-btn"
+              onClick={toggleSidebar}
+              title={isSidebarCollapsed ? "Expand sidebar (show menu text)" : "Collapse sidebar (show icons only)"}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '34px',
+                height: '34px',
+                borderRadius: '7px',
+                border: '1px solid #cbd5e1',
+                background: '#ffffff',
+                color: '#334155',
+                cursor: 'pointer',
+                marginRight: '12px',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                transition: 'all 0.15s ease'
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = '#f1f5f9';
+                e.currentTarget.style.borderColor = '#94a3b8';
+                e.currentTarget.style.color = '#1d4ed8';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = '#ffffff';
+                e.currentTarget.style.borderColor = '#cbd5e1';
+                e.currentTarget.style.color = '#334155';
+              }}
+            >
+              {isSidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+            </button>
             <IndianEmblem size={30} color="#1e3a8a" />
             <div className="header-title-group">
               <h1>AICTE</h1>
@@ -138,84 +175,6 @@ export default function Layout() {
             <div className="gov-indicator">
               <div className="gov-title">Government of India</div>
               <div className="gov-sub">Ministry of Education</div>
-            </div>
-
-            {/* Directorate Workspace Navigation */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '2px',
-              background: '#f1f5f9',
-              padding: '3px 4px',
-              borderRadius: '6px',
-              border: '1px solid #cbd5e1'
-            }}>
-              <span style={{ fontSize: '10px', fontWeight: '800', color: '#475569', padding: '0 5px', letterSpacing: '0.3px', textTransform: 'uppercase' }}>
-                Directorate:
-              </span>
-              <button
-                id="role-switch-officer-btn"
-                onClick={() => {
-                  switchRole('officer');
-                  setCurrentPage('vo-dashboard');
-                }}
-                style={{
-                  padding: '4px 9px',
-                  fontSize: '11px',
-                  fontWeight: currentRoleKey === 'officer' ? '800' : '600',
-                  background: currentRoleKey === 'officer' ? '#0f172a' : 'transparent',
-                  color: currentRoleKey === 'officer' ? '#ffffff' : '#334155',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-                title="AICTE Scrutiny & Approval Directorate"
-              >
-                Scrutiny Bureau
-              </button>
-              <button
-                id="role-switch-inst-btn"
-                onClick={() => {
-                  switchRole('institution');
-                  setCurrentPage('inst-dashboard');
-                }}
-                style={{
-                  padding: '4px 9px',
-                  fontSize: '11px',
-                  fontWeight: currentRoleKey === 'institution' ? '800' : '600',
-                  background: currentRoleKey === 'institution' ? '#0f172a' : 'transparent',
-                  color: currentRoleKey === 'institution' ? '#ffffff' : '#334155',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-                title="Technical Institution Applicant Desk"
-              >
-                Institution Desk
-              </button>
-              <button
-                id="role-switch-admin-btn"
-                onClick={() => {
-                  switchRole('admin');
-                  setCurrentPage('admin-dashboard');
-                }}
-                style={{
-                  padding: '4px 9px',
-                  fontSize: '11px',
-                  fontWeight: currentRoleKey === 'admin' ? '800' : '600',
-                  background: currentRoleKey === 'admin' ? '#0f172a' : 'transparent',
-                  color: currentRoleKey === 'admin' ? '#ffffff' : '#334155',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-                title="Central System Administration"
-              >
-                Administration
-              </button>
             </div>
 
             {/* Notifications Bell */}
@@ -321,9 +280,9 @@ export default function Layout() {
           </div>
         </header>
 
-        {/* Page Content Router based on Role */}
+        {/* Page Content Router based on Exact Three Roles */}
         <main className="page-container" style={{ paddingBottom: '60px' }}>
-          {/* ROLE 1: INSTITUTION */}
+          {/* ROLE 1: INSTITUTION PORTAL */}
           {currentRoleKey === 'institution' && (
             <InstitutionViews
               subPage={currentPage}
@@ -333,37 +292,16 @@ export default function Layout() {
             />
           )}
 
-          {/* ROLE 2: SCRUTINY OFFICER */}
-          {currentRoleKey === 'officer' && isScrutiny && (
-            <VerificationOfficerViews
+          {/* ROLE 2: AICTE OFFICER PORTAL */}
+          {currentRoleKey === 'officer' && (
+            <OfficerPortalViews
               subPage={currentPage}
               onNavigate={page => setCurrentPage(page)}
-              onSelectApp={appId => {}}
               onViewDoc={() => {}}
             />
           )}
 
-          {/* ROLE 3: COMPLIANCE OFFICER */}
-          {currentRoleKey === 'officer' && isCompliance && (
-            <ComplianceReviewerViews
-              subPage={currentPage}
-              onNavigate={page => setCurrentPage(page)}
-              onSelectApp={appId => {}}
-              onViewDoc={() => {}}
-            />
-          )}
-
-          {/* ROLE 4: AUTHORIZED AICTE DECISION-MAKER */}
-          {currentRoleKey === 'officer' && isDecisionMaker && !isScrutiny && (
-            <DecisionMakerViews
-              subPage={currentPage}
-              onNavigate={page => setCurrentPage(page)}
-              onSelectApp={appId => {}}
-              onViewDoc={() => {}}
-            />
-          )}
-
-          {/* ROLE 5: SYSTEM ADMINISTRATOR */}
+          {/* ROLE 3: SYSTEM ADMINISTRATOR PORTAL */}
           {currentRoleKey === 'admin' && (
             <AdminViews
               subPage={currentPage}
@@ -374,16 +312,16 @@ export default function Layout() {
           )}
         </main>
 
-        {/* Official Footer */}
+        {/* Official Sovereign Government Footer */}
         <footer style={{
           textAlign: 'center',
-          padding: '12px 24px',
+          padding: '14px 24px',
           borderTop: '1px solid #e2e8f0',
           background: '#ffffff',
           fontSize: '11px',
           color: '#64748b'
         }}>
-          <div>
+          <div style={{ fontWeight: '600', color: '#0f172a' }}>
             AICTE Regulatory Compliance &amp; Application Validation Platform · Ministry of Education, Government of India
           </div>
           <div style={{ marginTop: '2px', color: '#94a3b8' }}>

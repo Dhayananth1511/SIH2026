@@ -132,6 +132,10 @@ class DocumentOut(BaseModel):
     extracted_data: Optional[Any]
     uploaded_at: datetime
     expires_at: Optional[datetime]
+    officer_verification_outcome: Optional[str] = None
+    officer_verification_notes: Optional[str] = None
+    officer_verified_by: Optional[int] = None
+    officer_verified_at: Optional[datetime] = None
     versions: List[DocumentVersionOut] = []
 
     class Config:
@@ -200,6 +204,44 @@ class ValidationRunOut(BaseModel):
         from_attributes = True
 
 
+# ---- Clarification & Formal Query Schemas ----
+class ClarificationOut(BaseModel):
+    id: int
+    clarification_id: str
+    application_id: int
+    officer_id: Optional[int] = None
+    subject: str
+    related_item_type: Optional[str] = "document"
+    related_item_id: Optional[str] = None
+    question_text: str
+    evidence_reference: Optional[str] = None
+    due_date: Optional[datetime] = None
+    status: str = "PENDING_INSTITUTION"
+    institution_response: Optional[str] = None
+    response_attachment: Optional[str] = None
+    response_submitted_at: Optional[datetime] = None
+    messages: Optional[Any] = []
+    created_at: datetime
+    resolved_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ClarificationCreate(BaseModel):
+    subject: str
+    related_item_type: Optional[str] = "document"
+    related_item_id: Optional[str] = None
+    question_text: str
+    evidence_reference: Optional[str] = None
+    due_date: Optional[str] = None
+
+
+class ClarificationReplyRequest(BaseModel):
+    reply_text: str
+    attachment_url: Optional[str] = None
+
+
 # ---- Review Action & Decision Records ----
 class ClarificationSubmit(BaseModel):
     response_text: str
@@ -243,6 +285,26 @@ class DecisionRecordOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ---- Officer Scrutiny & Document Verification Requests ----
+class DocumentVerifyOutcomeRequest(BaseModel):
+    outcome: str # VERIFIED, MISMATCH_DETECTED, VERIFICATION_PENDING, MANUAL_REVIEW_REQUIRED, SOURCE_UNAVAILABLE
+    officer_notes: Optional[str] = None
+    source_identified: Optional[str] = None
+    evidence_reference: Optional[str] = None
+
+
+class ScrutinyStepReviewRequest(BaseModel):
+    section_key: str
+    status: str = "REVIEWED" # REVIEWED, DISCREPANCY_FLAGGED, MANUAL_VERIFICATION_REQUIRED
+    remarks: Optional[str] = None
+
+
+class ComplianceRuleReviewRequest(BaseModel):
+    rule_id: str
+    officer_result: str # PASSED, DEFICIENCY_FOUND, MANUAL_REVIEW_REQUIRED, UNRESOLVED_DISCREPANCY
+    officer_remarks: Optional[str] = None
 
 
 # ---- Notification Schemas ----
@@ -314,6 +376,7 @@ class ApplicationOut(BaseModel):
     certificate_number: Optional[str] = None
     certificate_url: Optional[str] = None
     ai_suggestions: Optional[Any] = None
+    scrutiny_sections_reviewed: Optional[Any] = None
 
     # Nested entities
     documents: List[DocumentOut] = []
@@ -321,6 +384,7 @@ class ApplicationOut(BaseModel):
     compliance_checks: List[ComplianceCheckOut] = []
     validation_runs: List[ValidationRunOut] = []
     review_actions: List[ReviewActionOut] = []
+    clarifications: List[ClarificationOut] = []
     decision_record: Optional[DecisionRecordOut] = None
 
     class Config:
@@ -349,6 +413,12 @@ class RegulatoryRuleCreate(BaseModel):
     is_mandatory: Optional[bool] = True
     is_active: Optional[bool] = True
     version: Optional[str] = "APH-2026.1"
+    source_reference: Optional[str] = "AICTE Approval Process Handbook (APH 2026-27)"
+    applicable_types: Optional[Any] = ["Extension of Approval (EoA)", "New Technical Institution", "Increase in Intake"]
+    effective_period: Optional[str] = "2026-2027"
+    validation_method: Optional[str] = "AUTOMATED_AND_MANUAL"
+    status: Optional[str] = "PUBLISHED"
+    change_rationale: Optional[str] = None
 
 
 class RegulatoryRuleUpdate(BaseModel):
@@ -360,6 +430,12 @@ class RegulatoryRuleUpdate(BaseModel):
     is_mandatory: Optional[bool] = None
     is_active: Optional[bool] = None
     version: Optional[str] = None
+    source_reference: Optional[str] = None
+    applicable_types: Optional[Any] = None
+    effective_period: Optional[str] = None
+    validation_method: Optional[str] = None
+    status: Optional[str] = None
+    change_rationale: Optional[str] = None
 
 
 class RegulatoryRuleOut(BaseModel):
@@ -373,6 +449,12 @@ class RegulatoryRuleOut(BaseModel):
     is_mandatory: bool = True
     is_active: bool
     version: str = "APH-2026.1"
+    source_reference: Optional[str] = "AICTE Approval Process Handbook (APH 2026-27)"
+    applicable_types: Optional[Any] = []
+    effective_period: Optional[str] = "2026-2027"
+    validation_method: Optional[str] = "AUTOMATED_AND_MANUAL"
+    status: Optional[str] = "PUBLISHED"
+    change_rationale: Optional[str] = None
     created_by: Optional[int] = None
     updated_at: datetime
 

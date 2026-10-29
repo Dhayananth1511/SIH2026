@@ -73,6 +73,7 @@ export interface Document {
   filename: string;
   file_size?: number;
   sha256_hash?: string;
+  file_hash?: string;
   version?: number;
   is_latest?: boolean;
   status: 'valid' | 'deficient' | 'pending' | 'flagged' | 'not_verifiable' | string;
@@ -80,7 +81,39 @@ export interface Document {
   extracted_data?: Record<string, any>;
   uploaded_at: string;
   expires_at?: string;
+  officer_verification_outcome?: string;
+  officer_verification_notes?: string;
+  officer_verified_by?: number;
+  officer_verified_at?: string;
   versions?: DocumentVersion[];
+}
+
+export interface ClarificationMessage {
+  sender_role: 'OFFICER' | 'INSTITUTION' | string;
+  sender_name: string;
+  timestamp: string;
+  text: string;
+  attachment?: string;
+}
+
+export interface Clarification {
+  id: number;
+  clarification_id: string;
+  application_id: number | string;
+  officer_id?: number;
+  subject: string;
+  related_item_type?: string;
+  related_item_id?: string;
+  question_text: string;
+  evidence_reference?: string;
+  due_date?: string;
+  status: 'PENDING_INSTITUTION' | 'RESPONSE_SUBMITTED' | 'RESOLVED' | 'REOPENED' | string;
+  institution_response?: string;
+  response_attachment?: string;
+  response_submitted_at?: string;
+  messages?: ClarificationMessage[];
+  created_at: string;
+  resolved_at?: string;
 }
 
 export interface Finding {
@@ -99,6 +132,9 @@ export interface Finding {
   detected_issue?: string;
   why_attention_needed?: string;
   recommended_action?: string;
+  suggested_action?: string;
+  field_name?: string;
+  doc_type?: string;
   ai_suggestion?: string;
   evidence?: any;
   page_number?: number;
@@ -117,6 +153,9 @@ export interface ComplianceCheck {
   details: string;
   evidence_value?: string;
   required_value?: string;
+  extracted_value?: string;
+  is_compliant?: boolean;
+  notes?: string;
   rule_version?: string;
   checked_at?: string;
 }
@@ -224,11 +263,14 @@ export interface Application {
     severity: string;
   }>;
 
+  scrutiny_sections_reviewed?: Record<string, { status: string; reviewed_by: string; reviewed_at: string; remarks?: string }>;
+
   documents?: Document[];
   findings?: Finding[];
   compliance_checks?: ComplianceCheck[];
   validation_runs?: ValidationRun[];
   review_actions?: ReviewAction[];
+  clarifications?: Clarification[];
   decision_record?: DecisionRecord;
 }
 
@@ -243,6 +285,12 @@ export interface RegulatoryRule {
   is_mandatory: boolean;
   is_active: boolean;
   version: string;
+  source_reference?: string;
+  applicable_types?: string[] | string;
+  effective_period?: string;
+  validation_method?: string;
+  status?: string;
+  change_rationale?: string;
   created_by?: number;
   updated_at: string;
 }

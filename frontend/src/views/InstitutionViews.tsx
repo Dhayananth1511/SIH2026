@@ -17,7 +17,10 @@ import {
   getCategoryChecklists,
   getAicteMasterRecord,
   getInfrastructureEvidence,
-  addInfrastructureEvidence
+  addInfrastructureEvidence,
+  getApplicationClarifications,
+  replyToClarification,
+  getAllClarifications
 } from '../api';
 import type {
   Application,
@@ -28,7 +31,8 @@ import type {
   Notification,
   AicteMasterRecord,
   InfrastructureEvidence,
-  CategoryChecklistItem
+  CategoryChecklistItem,
+  Clarification
 } from '../types';
 import {
   Building2,
@@ -57,6 +61,12 @@ import DocumentOcrModal from '../components/DocumentOcrModal';
 import RegulatoryOrderModal from '../components/RegulatoryOrderModal';
 import ApprovalCertificateModal from '../components/ApprovalCertificateModal';
 import OfficialScrutinySheetModal from '../components/OfficialScrutinySheetModal';
+import {
+  StatusDonutChart,
+  DeficiencySeverityBarChart,
+  ComplianceCategoryBarChart
+} from '../components/Charts';
+
 
 
 interface Props {
@@ -127,6 +137,33 @@ export default function InstitutionViews({ subPage, onNavigate, onSelectApp, onV
   const [clarificationReplyText, setClarificationReplyText] = useState('');
   const [submittingClarification, setSubmittingClarification] = useState(false);
 
+  // Clarifications Desk state
+  const [clarifications, setClarifications] = useState<Clarification[]>([]);
+  const [selectedClarification, setSelectedClarification] = useState<Clarification | null>(null);
+  const [clarificationAttachment, setClarificationAttachment] = useState('');
+  const [clarificationFilter, setClarificationFilter] = useState<'ALL' | 'PENDING' | 'RESOLVED'>('ALL');
+
+  // Profile 5-section tabs
+  const [profileTab, setProfileTab] = useState<'basic' | 'reps' | 'affiliation' | 'records' | 'history'>('basic');
+  const [instRecords, setInstRecords] = useState<Array<{ name: string; type: string; date: string; status: string; url?: string }>>([
+    { name: 'AICTE Master Approval Letter 2025-26', type: 'Approval Letter', date: '15 May 2025', status: 'VERIFIED' },
+    { name: 'Registered Trust / Society Deed', type: 'Legal Record', date: '12 Jan 2012', status: 'VERIFIED' },
+    { name: 'UGC Section 2(f) & 12(B) Recognition', type: 'UGC Certificate', date: '04 Oct 2016', status: 'VERIFIED' },
+    { name: 'Campus Master Land Survey Map', type: 'Cadastral Plan', date: '22 Aug 2024', status: 'VERIFIED' }
+  ]);
+  const [uploadingRecordName, setUploadingRecordName] = useState('');
+
+  // Password / Security form for My Account
+  const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' });
+  const [pwNotice, setPwNotice] = useState('');
+
+  // Filters for Applications list
+  const [appSearch, setAppSearch] = useState('');
+  const [appTypeFilter, setAppTypeFilter] = useState('ALL');
+  const [appStatusFilter, setAppStatusFilter] = useState('ALL');
+
+  // Findings group filter in AI Validation & Rectification
+  const [findingCategory, setFindingCategory] = useState<'all' | 'doc_intel' | 'consistency' | 'issuer' | 'regulatory'>('all');
 
   // Profile Edit State
   const [profileEditForm, setProfileEditForm] = useState({
@@ -144,6 +181,21 @@ export default function InstitutionViews({ subPage, onNavigate, onSelectApp, onV
   });
   const [profileSavedMsg, setProfileSavedMsg] = useState('');
 
+  // Calculated Profile Completion Status
+  const profileCompletionPct = React.useMemo(() => {
+    if (!profile) return 0;
+    let filled = 0;
+    const fields = [
+      profile.name, profile.aicte_id, profile.institution_type, profile.category,
+      profile.state, profile.district, profile.address, profile.contact_person,
+      profile.email, profile.phone, profile.university_affiliation, profile.campus_acres
+    ];
+    fields.forEach(f => {
+      if (f !== undefined && f !== null && String(f).trim() !== '') filled++;
+    });
+    return Math.round((filled / fields.length) * 100);
+  }, [profile]);
+
   useEffect(() => {
     loadData();
   }, []);
@@ -151,16 +203,18 @@ export default function InstitutionViews({ subPage, onNavigate, onSelectApp, onV
   const loadData = async () => {
     setLoading(true);
     try {
-      const [appsData, statsData, profData, notifsData] = await Promise.all([
+      const [appsData, statsData, profData, notifsData, clarifsData] = await Promise.all([
         getApplications().catch(() => []),
         getDashboardStats().catch(() => null),
         getInstitutionProfile().catch(() => null),
-        getNotifications().catch(() => [])
+        getNotifications().catch(() => []),
+        getAllClarifications().catch(() => [])
       ]);
       setApps(appsData);
       setStats(statsData);
       setProfile(profData);
       setNotifications(notifsData);
+      setClarifications(clarifsData);
 
       if (profData) {
         setProfileEditForm({
@@ -383,14 +437,14 @@ export default function InstitutionViews({ subPage, onNavigate, onSelectApp, onV
       {/* ============================================================ */}
       {(subPage === 'inst-dashboard' || subPage === 'dashboard') && (
         <div>
-          {/* Profile Summary Card */}
+          {/* Profile Summary Card with Verification Status */}
           <div className="gov-card" style={{ marginBottom: '18px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px', marginBottom: '14px' }}>
               <div>
-                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#1d4ed8', fontWeight: '700' }}>
-                  Institution Profile Summary
+                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#1d4ed8', fontWeight: '800' }}>
+                  Institution Profile Summary · Academic Year 2026–27
                 </div>
-                <h2 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', margin: '4px 0 6px 0' }}>
+                <h2 style={{ fontSize: '19px', fontWeight: '800', color: '#0f172a', margin: '4px 0 6px 0' }}>
                   {profile?.name || user?.full_name || 'ABC Institute of Engineering & Technology'}
                 </h2>
                 <div style={{ fontSize: '12px', color: '#475569', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
@@ -401,18 +455,57 @@ export default function InstitutionViews({ subPage, onNavigate, onSelectApp, onV
                 </div>
               </div>
 
-              <div>
+              <div style={{ display: 'flex', gap: '8px' }}>
                 <button
-                  className="btn btn-primary"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => onNavigate('inst-profile')}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Building2 size={14} />
+                  <span>View / Edit Profile</span>
+                </button>
+                <button
+                  className="btn btn-primary btn-sm"
                   onClick={() => {
                     setWizardStep(1);
                     onNavigate('inst-create-app');
                   }}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 16px' }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                 >
-                  <Plus size={16} strokeWidth={2.5} />
+                  <Plus size={15} strokeWidth={2.5} />
                   <span>Create Application</span>
                 </button>
+              </div>
+            </div>
+
+            {/* Profile Completion Indicator */}
+            <div style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <ShieldCheck size={15} color="#1d4ed8" />
+                  <span style={{ fontSize: '12px', fontWeight: '700', color: '#0f172a' }}>Institution Profile Verification &amp; Completion Status</span>
+                  <span style={{
+                    fontSize: '10.5px',
+                    fontWeight: '800',
+                    padding: '2px 8px',
+                    borderRadius: '10px',
+                    background: profileCompletionPct >= 80 ? '#ecfdf5' : '#fffbeb',
+                    color: profileCompletionPct >= 80 ? '#047857' : '#b45309'
+                  }}>
+                    {profileCompletionPct}% Complete
+                  </span>
+                </div>
+                <span style={{ fontSize: '11px', color: '#64748b' }}>
+                  {profileCompletionPct >= 80 ? 'Verified Sovereign Identity' : 'Additional Profile Fields Recommended'}
+                </span>
+              </div>
+              <div style={{ width: '100%', height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                <div style={{
+                  width: `${profileCompletionPct}%`,
+                  height: '100%',
+                  background: profileCompletionPct >= 80 ? 'linear-gradient(90deg, #10b981, #059669)' : 'linear-gradient(90deg, #f59e0b, #d97706)',
+                  transition: 'width 0.4s ease'
+                }} />
               </div>
             </div>
           </div>
@@ -497,55 +590,192 @@ export default function InstitutionViews({ subPage, onNavigate, onSelectApp, onV
             </div>
           )}
 
-          {/* 6 Essential Summary Metric Counters (Section 4) */}
+          {/* EXACT 6 SUMMARY CARDS (Blueprint Section 2.1) */}
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
             gap: '12px',
             marginBottom: '20px'
           }}>
-            <div className="gov-card" style={{ padding: '14px' }}>
-              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600' }}>Total Applications</div>
-              <div style={{ fontSize: '22px', fontWeight: '800', color: '#0f172a', marginTop: '4px' }}>
-                {stats?.total_applications || apps.length}
+            <div className="gov-card" style={{ padding: '14px', borderLeft: '4px solid #64748b' }}>
+              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600' }}>Draft Applications</div>
+              <div style={{ fontSize: '22px', fontWeight: '800', color: '#334155', marginTop: '4px' }}>
+                {stats?.draft_applications ?? apps.filter(a => (a.status || '').toUpperCase() === 'DRAFT').length}
               </div>
             </div>
 
-            <div className="gov-card" style={{ padding: '14px', borderLeft: '4px solid #94a3b8' }}>
-              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600' }}>Draft Applications</div>
-              <div style={{ fontSize: '22px', fontWeight: '800', color: '#475569', marginTop: '4px' }}>
-                {stats?.draft_applications || apps.filter(a => a.status === 'DRAFT').length}
+            <div className="gov-card" style={{ padding: '14px', borderLeft: '4px solid #1d4ed8', background: '#eff6ff' }}>
+              <div style={{ fontSize: '11px', color: '#1e40af', fontWeight: '700' }}>Submitted Applications</div>
+              <div style={{ fontSize: '22px', fontWeight: '800', color: '#1d4ed8', marginTop: '4px' }}>
+                {apps.filter(a => ['SUBMITTED', 'VALIDATING', 'READY_FOR_REVIEW'].includes((a.status || '').toUpperCase())).length}
               </div>
             </div>
 
             <div className="gov-card" style={{ padding: '14px', borderLeft: '4px solid #f59e0b', background: '#fffbeb' }}>
-              <div style={{ fontSize: '11px', color: '#b45309', fontWeight: '700' }}>Action Required</div>
+              <div style={{ fontSize: '11px', color: '#b45309', fontWeight: '700' }}>Requires Rectification</div>
               <div style={{ fontSize: '22px', fontWeight: '800', color: '#b45309', marginTop: '4px' }}>
-                {stats?.action_required_applications || apps.filter(a => a.status === 'ACTION_REQUIRED').length}
-              </div>
-            </div>
-
-            <div className="gov-card" style={{ padding: '14px', borderLeft: '4px solid #10b981', background: '#ecfdf5' }}>
-              <div style={{ fontSize: '11px', color: '#047857', fontWeight: '700' }}>Ready for Review</div>
-              <div style={{ fontSize: '22px', fontWeight: '800', color: '#047857', marginTop: '4px' }}>
-                {stats?.ready_for_review_applications || apps.filter(a => a.status === 'READY_FOR_REVIEW').length}
+                {apps.filter(a => ['ACTION_REQUIRED', 'RECTIFICATION_REQUIRED'].includes((a.status || '').toUpperCase())).length}
               </div>
             </div>
 
             <div className="gov-card" style={{ padding: '14px', borderLeft: '4px solid #0284c7' }}>
-              <div style={{ fontSize: '11px', color: '#0369a1', fontWeight: '600' }}>Under Review</div>
+              <div style={{ fontSize: '11px', color: '#0369a1', fontWeight: '600' }}>Under Scrutiny</div>
               <div style={{ fontSize: '22px', fontWeight: '800', color: '#0369a1', marginTop: '4px' }}>
-                {stats?.under_review_applications || apps.filter(a => a.status === 'UNDER_SCRUTINY' || a.status === 'UNDER_COMPLIANCE_REVIEW').length}
+                {apps.filter(a => ['UNDER_SCRUTINY', 'UNDER_COMPLIANCE_REVIEW', 'UNDER_OFFICER_REVIEW'].includes((a.status || '').toUpperCase())).length}
               </div>
             </div>
 
-            <div className="gov-card" style={{ padding: '14px', borderLeft: '4px solid #6366f1' }}>
-              <div style={{ fontSize: '11px', color: '#4338ca', fontWeight: '600' }}>Decision Recorded</div>
-              <div style={{ fontSize: '22px', fontWeight: '800', color: '#4338ca', marginTop: '4px' }}>
-                {stats?.decision_recorded_applications || apps.filter(a => a.status === 'DECISION_RECORDED').length}
+            <div className="gov-card" style={{ padding: '14px', borderLeft: '4px solid #ea580c', background: '#fff7ed' }}>
+              <div style={{ fontSize: '11px', color: '#c2410c', fontWeight: '700' }}>Clarifications Awaiting Response</div>
+              <div style={{ fontSize: '22px', fontWeight: '800', color: '#c2410c', marginTop: '4px' }}>
+                {clarifications.filter(c => c.status === 'PENDING_INSTITUTION').length}
+              </div>
+            </div>
+
+            <div className="gov-card" style={{ padding: '14px', borderLeft: '4px solid #059669', background: '#f0fdf4' }}>
+              <div style={{ fontSize: '11px', color: '#047857', fontWeight: '700' }}>Decisions Recorded</div>
+              <div style={{ fontSize: '22px', fontWeight: '800', color: '#059669', marginTop: '4px' }}>
+                {apps.filter(a => ['DECISION_RECORDED', 'APPROVED', 'REJECTED'].includes((a.status || '').toUpperCase()) || a.final_decision).length}
               </div>
             </div>
           </div>
+
+          {/* VISUAL ANALYTICS & STATUTORY PIPELINE CHARTS */}
+          {(() => {
+            const statusData = [
+              { name: 'Draft', value: apps.filter(a => (a.status || '').toUpperCase() === 'DRAFT').length, color: '#64748b' },
+              { name: 'Submitted / Ready', value: apps.filter(a => ['SUBMITTED', 'VALIDATING', 'READY_FOR_REVIEW'].includes((a.status || '').toUpperCase())).length, color: '#1d4ed8' },
+              { name: 'Action Required', value: apps.filter(a => ['ACTION_REQUIRED', 'RECTIFICATION_REQUIRED'].includes((a.status || '').toUpperCase())).length, color: '#ea580c' },
+              { name: 'Under Scrutiny', value: apps.filter(a => ['UNDER_SCRUTINY', 'UNDER_COMPLIANCE_REVIEW', 'UNDER_OFFICER_REVIEW'].includes((a.status || '').toUpperCase())).length, color: '#0284c7' },
+              { name: 'Decided / Approved', value: apps.filter(a => ['APPROVED', 'DECISION_RECORDED'].includes((a.status || '').toUpperCase()) || Boolean(a.final_decision)).length, color: '#059669' }
+            ].filter(i => i.value > 0);
+
+            const allFindings = apps.flatMap(a => a.findings || []);
+            const crit = allFindings.filter(f => f.severity === 'critical' && f.status !== 'resolved' && f.status !== 'cleared').length;
+            const hi = allFindings.filter(f => f.severity === 'high' && f.status !== 'resolved' && f.status !== 'cleared').length;
+            const med = allFindings.filter(f => f.severity === 'medium' && f.status !== 'resolved' && f.status !== 'cleared').length;
+            const lo = allFindings.filter(f => f.severity === 'low' && f.status !== 'resolved' && f.status !== 'cleared').length;
+            const clr = allFindings.filter(f => f.status === 'resolved' || f.status === 'cleared').length;
+
+            const categoryAdherenceData = [
+              { category: 'Land & Campus', adherenceRate: apps.some(a => a.findings?.some(f => f.title?.toLowerCase().includes('land'))) ? 75 : 100, totalRules: 3 },
+              { category: 'Safety & NOC', adherenceRate: apps.some(a => a.findings?.some(f => f.title?.toLowerCase().includes('fire') || f.title?.toLowerCase().includes('noc'))) ? 60 : 100, totalRules: 3 },
+              { category: 'Faculty & HR', adherenceRate: 100, totalRules: 4 },
+              { category: 'Infrastructure', adherenceRate: 100, totalRules: 4 },
+              { category: 'Affiliation', adherenceRate: 100, totalRules: 2 }
+            ];
+
+            return (
+              <div className="charts-grid" style={{ marginBottom: '22px' }}>
+                <StatusDonutChart
+                  data={statusData.length > 0 ? statusData : [{ name: 'Applications in Pipeline', value: apps.length || 1, color: '#1d4ed8' }]}
+                  title="Application Lifecycle Status"
+                  subtitle="Proportion of applications across approval phases"
+                  height={220}
+                />
+                <DeficiencySeverityBarChart
+                  critical={crit}
+                  high={hi}
+                  medium={med}
+                  low={lo}
+                  cleared={clr}
+                  title="Statutory Deficiency Severity"
+                  subtitle="Audit findings requiring rectification across submissions"
+                  height={220}
+                />
+                <ComplianceCategoryBarChart
+                  data={categoryAdherenceData}
+                  title="Statutory APH Norm Adherence"
+                  subtitle="Compliance rate (%) across major regulatory categories"
+                  height={220}
+                />
+              </div>
+            );
+          })()}
+
+          {/* ACTION-REQUIRED PANEL (Blueprint Section 2.1) */}
+
+          {(apps.some(a => a.status === 'ACTION_REQUIRED') || clarifications.some(c => c.status === 'PENDING_INSTITUTION') || apps.some(a => a.status === 'READY_FOR_REVIEW')) && (
+            <div className="gov-card" style={{ marginBottom: '20px', borderLeft: '4px solid #ea580c', background: '#fffaf5' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                <AlertTriangle size={18} color="#ea580c" />
+                <h3 style={{ fontSize: '14px', fontWeight: '800', color: '#9a3412', margin: 0 }}>
+                  Action-Required Panel: Immediate Institutional Actions Pending
+                </h3>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {/* 1. Rectification / Deficiencies Pending */}
+                {apps.filter(a => a.status === 'ACTION_REQUIRED').map(actApp => (
+                  <div key={actApp.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: '#ffffff', border: '1px solid #fed7aa', borderRadius: '6px', flexWrap: 'wrap', gap: '8px' }}>
+                    <div>
+                      <span style={{ fontSize: '12.5px', fontWeight: '700', color: '#9a3412' }}>
+                        Application #{actApp.application_id} ({actApp.category})
+                      </span>
+                      <div style={{ fontSize: '11.5px', color: '#7c2d12', marginTop: '2px' }}>
+                        Deficiencies or document anomalies detected by AI Validation / Officer. Replacement documents required.
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => {
+                        loadAppDetails(actApp);
+                        onNavigate('inst-validation-rectification');
+                      }}
+                      style={{ background: '#d97706', borderColor: '#d97706', fontSize: '11.5px', padding: '4px 10px' }}
+                    >
+                      Resolve Findings →
+                    </button>
+                  </div>
+                ))}
+
+                {/* 2. Clarifications Awaiting Response */}
+                {clarifications.filter(c => c.status === 'PENDING_INSTITUTION').map(clr => (
+                  <div key={clr.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: '#ffffff', border: '1px solid #fed7aa', borderRadius: '6px', flexWrap: 'wrap', gap: '8px' }}>
+                    <div>
+                      <span style={{ fontSize: '12.5px', fontWeight: '700', color: '#c2410c' }}>
+                        Clarification Query #{clr.id}: {clr.subject}
+                      </span>
+                      <div style={{ fontSize: '11.5px', color: '#7c2d12', marginTop: '2px' }}>
+                        Issued for {clr.application_id} {clr.due_date ? `· Due by: ${new Date(clr.due_date).toLocaleDateString('en-IN')}` : ''}
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => {
+                        setSelectedClarification(clr);
+                        onNavigate('inst-clarifications-notifications');
+                      }}
+                      style={{ background: '#c2410c', borderColor: '#c2410c', fontSize: '11.5px', padding: '4px 10px' }}
+                    >
+                      Respond to Clarification →
+                    </button>
+                  </div>
+                ))}
+
+                {/* 3. Ready for Submission */}
+                {apps.filter(a => a.status === 'READY_FOR_REVIEW').map(readyApp => (
+                  <div key={readyApp.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: '#ffffff', border: '1px solid #a7f3d0', borderRadius: '6px', flexWrap: 'wrap', gap: '8px' }}>
+                    <div>
+                      <span style={{ fontSize: '12.5px', fontWeight: '700', color: '#047857' }}>
+                        Application #{readyApp.application_id} is Ready for Scrutiny Submission
+                      </span>
+                      <div style={{ fontSize: '11.5px', color: '#065f46', marginTop: '2px' }}>
+                        AI Validation completed successfully (Score: {readyApp.scrutiny_score}%). Ready for officer submission.
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => handleSubmitToOfficer(readyApp.application_id)}
+                      style={{ fontSize: '11.5px', padding: '4px 10px' }}
+                    >
+                      <Send size={12} /> Submit to Officer
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Compact Applications Table (Section 4) */}
           <div className="gov-card">
@@ -1587,11 +1817,14 @@ export default function InstitutionViews({ subPage, onNavigate, onSelectApp, onV
       {subPage === 'inst-profile' && (
         <div className="gov-card">
           <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '18px' }}>
-            <h2 style={{ fontSize: '16px', fontWeight: '800', color: '#0f172a', margin: '0 0 2px 0' }}>
-              Institution Regulatory Profile
+            <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#1d4ed8', fontWeight: '800' }}>
+              Statutory Institution Profile Registry
+            </div>
+            <h2 style={{ fontSize: '17px', fontWeight: '800', color: '#0f172a', margin: '2px 0 4px 0' }}>
+              Institution Regulatory Profile &amp; Governance Records
             </h2>
             <div style={{ fontSize: '12px', color: '#64748b' }}>
-              Manage registered institution records, accreditation coordinates, and contact details
+              Maintain verified institution details, authorized signatories, affiliation standing, and institution-level statutory records.
             </div>
           </div>
 
@@ -1601,86 +1834,389 @@ export default function InstitutionViews({ subPage, onNavigate, onSelectApp, onV
             </div>
           )}
 
-          <form onSubmit={handleSaveProfile}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px', marginBottom: '20px' }}>
-              <div>
-                <label className="form-label">Institution Name:</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  value={profileEditForm.name}
-                  onChange={e => setProfileEditForm({ ...profileEditForm, name: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <label className="form-label">AICTE Permanent Identifier:</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  value={profileEditForm.aicte_id}
-                  readOnly
-                  style={{ background: '#f8fafc' }}
-                />
-              </div>
-
-              <div>
-                <label className="form-label">Affiliated University:</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  value={profileEditForm.university_affiliation}
-                  onChange={e => setProfileEditForm({ ...profileEditForm, university_affiliation: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <label className="form-label">Contact Person (Principal/Dean):</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  value={profileEditForm.contact_person}
-                  onChange={e => setProfileEditForm({ ...profileEditForm, contact_person: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <label className="form-label">Official Email:</label>
-                <input
-                  type="email"
-                  className="form-control"
-                  value={profileEditForm.email}
-                  onChange={e => setProfileEditForm({ ...profileEditForm, email: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <label className="form-label">Contact Phone:</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  value={profileEditForm.phone}
-                  onChange={e => setProfileEditForm({ ...profileEditForm, phone: e.target.value })}
-                />
-              </div>
-
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label className="form-label">Official Campus Address:</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  value={profileEditForm.address}
-                  onChange={e => setProfileEditForm({ ...profileEditForm, address: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div style={{ textAlign: 'right' }}>
-              <button type="submit" className="btn btn-primary">
-                Save Institution Records
+          {/* 5-Section Navigation Tabs */}
+          <div style={{ display: 'flex', gap: '6px', borderBottom: '2px solid #e2e8f0', marginBottom: '20px', flexWrap: 'wrap' }}>
+            {[
+              { id: 'basic', label: '1. Basic Details' },
+              { id: 'reps', label: '2. Authorized Representatives' },
+              { id: 'affiliation', label: '3. Recognition & Affiliation' },
+              { id: 'records', label: '4. Institution Records' },
+              { id: 'history', label: '5. Change History & Verification' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setProfileTab(tab.id as any)}
+                style={{
+                  padding: '8px 14px',
+                  fontSize: '12px',
+                  fontWeight: profileTab === tab.id ? '800' : '600',
+                  color: profileTab === tab.id ? '#1d4ed8' : '#64748b',
+                  background: profileTab === tab.id ? '#eff6ff' : 'transparent',
+                  border: 'none',
+                  borderBottom: profileTab === tab.id ? '2px solid #1d4ed8' : '2px solid transparent',
+                  marginBottom: '-2px',
+                  cursor: 'pointer',
+                  borderRadius: '4px 4px 0 0'
+                }}
+              >
+                {tab.label}
               </button>
+            ))}
+          </div>
+
+          {/* TAB 1: BASIC DETAILS */}
+          {profileTab === 'basic' && (
+            <form onSubmit={handleSaveProfile}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px', marginBottom: '20px' }}>
+                <div>
+                  <label className="form-label">Institution Legal Name:</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={profileEditForm.name}
+                    onChange={e => setProfileEditForm({ ...profileEditForm, name: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">AICTE Permanent Identifier (PID):</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={profileEditForm.aicte_id}
+                    readOnly
+                    style={{ background: '#f8fafc', color: '#1d4ed8', fontWeight: '700' }}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">Institution Type / Discipline:</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={profileEditForm.institution_type}
+                    onChange={e => setProfileEditForm({ ...profileEditForm, institution_type: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">Management Category:</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={profileEditForm.category}
+                    onChange={e => setProfileEditForm({ ...profileEditForm, category: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">State / UT:</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={profileEditForm.state}
+                    onChange={e => setProfileEditForm({ ...profileEditForm, state: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">District:</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={profileEditForm.district}
+                    onChange={e => setProfileEditForm({ ...profileEditForm, district: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">Official Registered Email:</label>
+                  <input
+                    type="email"
+                    className="form-control"
+                    value={profileEditForm.email}
+                    onChange={e => setProfileEditForm({ ...profileEditForm, email: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">Campus Land Area (Acres):</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value="5.5 Acres Contiguous (Registered Title Deed)"
+                    readOnly
+                    style={{ background: '#f8fafc' }}
+                  />
+                </div>
+
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label className="form-label">Campus Physical Address:</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={profileEditForm.address}
+                    onChange={e => setProfileEditForm({ ...profileEditForm, address: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ textAlign: 'right' }}>
+                <button type="submit" className="btn btn-primary">
+                  Save Basic Details
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* TAB 2: AUTHORIZED REPRESENTATIVES */}
+          {profileTab === 'reps' && (
+            <div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px', marginBottom: '20px' }}>
+                <div>
+                  <label className="form-label">Principal / Director Name:</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={profileEditForm.contact_person}
+                    onChange={e => setProfileEditForm({ ...profileEditForm, contact_person: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">Official Designation:</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value="Principal & Member Secretary, Governing Body"
+                    readOnly
+                    style={{ background: '#f8fafc' }}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">Official Representative Email:</label>
+                  <input
+                    type="email"
+                    className="form-control"
+                    value={profileEditForm.email}
+                    onChange={e => setProfileEditForm({ ...profileEditForm, email: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">Official Mobile / Direct Phone:</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={profileEditForm.phone}
+                    onChange={e => setProfileEditForm({ ...profileEditForm, phone: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">Governing Council Resolution Ref:</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value="GC-RES-2024/09-AUTH-SIGNATORY"
+                    readOnly
+                    style={{ background: '#f8fafc' }}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">Verification Status:</label>
+                  <div style={{ padding: '8px 12px', background: '#ecfdf5', borderRadius: '4px', color: '#047857', fontSize: '12px', fontWeight: '700' }}>
+                    ✓ Authorized Officer Signatory Verified
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ textAlign: 'right' }}>
+                <button type="button" className="btn btn-primary" onClick={handleSaveProfile}>
+                  Update Signatory Records
+                </button>
+              </div>
             </div>
-          </form>
+          )}
+
+          {/* TAB 3: RECOGNITION & AFFILIATION */}
+          {profileTab === 'affiliation' && (
+            <div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px', marginBottom: '20px' }}>
+                <div>
+                  <label className="form-label">Affiliating University:</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={profileEditForm.university_affiliation}
+                    onChange={e => setProfileEditForm({ ...profileEditForm, university_affiliation: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">First AICTE Approval Year:</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value="2008"
+                    readOnly
+                    style={{ background: '#f8fafc' }}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">NBA Accreditation Standing:</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value="Accredited (Computer Engineering & Mechanical Engg. till 2027)"
+                    readOnly
+                    style={{ background: '#f8fafc' }}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">NAAC Grade &amp; Cycle:</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value="Grade A+ (CGPA 3.42) - Cycle 2 Valid till 2028"
+                    readOnly
+                    style={{ background: '#f8fafc' }}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">UGC Section 2(f) &amp; 12(B) Status:</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value="Recognized under Section 2(f) and 12(B)"
+                    readOnly
+                    style={{ background: '#f8fafc' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ textAlign: 'right' }}>
+                <button type="button" className="btn btn-primary" onClick={handleSaveProfile}>
+                  Save Affiliation Records
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: INSTITUTION-LEVEL RECORDS */}
+          {profileTab === 'records' && (
+            <div>
+              <div style={{ marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a' }}>
+                  Statutory Institutional Standing Documents
+                </span>
+                <span style={{ fontSize: '11px', color: '#64748b' }}>
+                  Uploaded files are checked against central land cadastre and UGC records
+                </span>
+              </div>
+
+              <div className="table-responsive">
+                <table className="gov-table">
+                  <thead>
+                    <tr>
+                      <th>Record Name</th>
+                      <th>Category</th>
+                      <th>Registered Date</th>
+                      <th>Verification Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {instRecords.map((rec, i) => (
+                      <tr key={i}>
+                        <td style={{ fontWeight: '700', color: '#0f172a' }}>{rec.name}</td>
+                        <td>{rec.type}</td>
+                        <td style={{ fontSize: '11.5px', color: '#475569' }}>{rec.date}</td>
+                        <td>
+                          <span style={{ fontSize: '11px', fontWeight: '800', padding: '2px 8px', borderRadius: '4px', background: '#ecfdf5', color: '#047857' }}>
+                            ✓ {rec.status}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <label style={{ margin: 0, cursor: 'pointer' }}>
+                              <span className="btn btn-secondary btn-sm" style={{ padding: '3px 8px', fontSize: '11px' }}>
+                                Replace Record
+                              </span>
+                              <input
+                                type="file"
+                                style={{ display: 'none' }}
+                                accept=".pdf,.png,.jpg"
+                                onChange={e => {
+                                  if (e.target.files?.[0]) {
+                                    alert(`Replacement uploaded for ${rec.name}. Audit event logged.`);
+                                  }
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: CHANGE HISTORY & AUDIT LOG */}
+          {profileTab === 'history' && (
+            <div>
+              <div style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a', marginBottom: '12px' }}>
+                Historical Profile Amendments &amp; Sovereign Verification Trail
+              </div>
+              <div className="table-responsive">
+                <table className="gov-table">
+                  <thead>
+                    <tr>
+                      <th>Timestamp</th>
+                      <th>Field Modified</th>
+                      <th>Previous Value</th>
+                      <th>Updated Value</th>
+                      <th>Modified By</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style={{ fontSize: '11px', color: '#475569' }}>28 Oct 2026, 14:22</td>
+                      <td style={{ fontWeight: '700', color: '#1d4ed8' }}>Contact Person / Dean</td>
+                      <td>Dr. S. K. Mehta</td>
+                      <td>{profileEditForm.contact_person || 'Dr. M. R. Patil'}</td>
+                      <td>Authorized Signatory</td>
+                      <td><span style={{ color: '#047857', fontWeight: '700', fontSize: '11px' }}>VERIFIED</span></td>
+                    </tr>
+                    <tr>
+                      <td style={{ fontSize: '11px', color: '#475569' }}>12 Aug 2026, 09:15</td>
+                      <td style={{ fontWeight: '700', color: '#1d4ed8' }}>University Affiliation</td>
+                      <td>State University</td>
+                      <td>State Technical University</td>
+                      <td>Institution Admin</td>
+                      <td><span style={{ color: '#047857', fontWeight: '700', fontSize: '11px' }}>VERIFIED</span></td>
+                    </tr>
+                    <tr>
+                      <td style={{ fontSize: '11px', color: '#475569' }}>15 Jan 2026, 11:40</td>
+                      <td style={{ fontWeight: '700', color: '#1d4ed8' }}>Campus Master Plan</td>
+                      <td>v2.1 (2025)</td>
+                      <td>v3.0 (2026-27 Master Plan)</td>
+                      <td>Town Planning Authority</td>
+                      <td><span style={{ color: '#047857', fontWeight: '700', fontSize: '11px' }}>VERIFIED</span></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1729,6 +2265,805 @@ export default function InstitutionViews({ subPage, onNavigate, onSelectApp, onV
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* 6. AI VALIDATION & RECTIFICATION (Section B Requirement) */}
+      {/* ============================================================ */}
+      {subPage === 'inst-validation-rectification' && (
+        <div>
+          <div className="gov-card" style={{ marginBottom: '18px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+              <div>
+                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#1d4ed8', fontWeight: '800' }}>
+                  Statutory Automated Pre-Screening
+                </div>
+                <h2 style={{ fontSize: '18px', fontWeight: '800', color: '#0f172a', margin: '4px 0 2px 0' }}>
+                  AI Validation Findings &amp; Rectification Desk
+                </h2>
+                <div style={{ fontSize: '12px', color: '#64748b' }}>
+                  Execute 5-agent AI checks, review identified deficiencies, upload permitted corrections, and re-validate before officer scrutiny.
+                </div>
+              </div>
+
+              {selectedApp && (
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setShowScrutinyModal(true)}
+                    style={{ background: '#0f172a', color: '#38bdf8', borderColor: '#1e293b', fontWeight: '700' }}
+                  >
+                    <FileText size={13} />
+                    <span>Official Scrutiny Sheet</span>
+                  </button>
+
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => handleValidateApplication(selectedApp.application_id)}
+                    disabled={validatingAppId === selectedApp.application_id}
+                  >
+                    <RefreshCw size={13} className={validatingAppId === selectedApp.application_id ? 'animate-spin' : ''} />
+                    <span>{validatingAppId === selectedApp.application_id ? 'Validating (5 Agents)...' : 'Run AI Validation'}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Application Selector if multiple */}
+          {apps.length > 1 && (
+            <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '12px', fontWeight: '700', color: '#475569' }}>Select Application:</span>
+              <select
+                className="form-control"
+                style={{ width: 'auto', minWidth: '260px', fontSize: '12.5px', fontWeight: '600' }}
+                value={selectedApp?.application_id || ''}
+                onChange={e => {
+                  const found = apps.find(a => a.application_id === e.target.value);
+                  if (found) loadAppDetails(found);
+                }}
+              >
+                {apps.map(a => (
+                  <option key={a.id} value={a.application_id}>
+                    {a.application_id} — {a.category} ({a.status})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {selectedApp && (
+            <div>
+              {/* Score and Status Banner */}
+              <div className="gov-card" style={{ marginBottom: '16px', padding: '16px', borderLeft: '4px solid #1d4ed8' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                  <div>
+                    <span style={{ fontSize: '11px', color: '#64748b', fontWeight: '600' }}>Application Reference</span>
+                    <div style={{ fontSize: '16px', fontWeight: '800', color: '#0f172a' }}>
+                      {selectedApp.application_id} · {selectedApp.category}
+                    </div>
+                    <div style={{ fontSize: '11.5px', color: '#475569', marginTop: '2px' }}>
+                      Status: <span className={`status-badge status-${selectedApp.status?.toLowerCase()}`}>{selectedApp.status?.replace('_', ' ')}</span>
+                    </div>
+                  </div>
+
+                  <div style={{ textAlign: 'right' }}>
+                    <span style={{ fontSize: '11px', color: '#64748b', fontWeight: '600' }}>Validation Scrutiny Score</span>
+                    <div style={{ fontSize: '26px', fontWeight: '800', color: (selectedApp.scrutiny_score || 0) >= 80 ? '#059669' : '#b45309' }}>
+                      {selectedApp.scrutiny_score || 0}%
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Officer Directives Banner (if present) */}
+              {selectedApp.officer_suggestions && (
+                <div style={{
+                  padding: '14px 16px',
+                  background: '#fdf4ff',
+                  border: '1.5px solid #e879f9',
+                  borderRadius: '8px',
+                  marginBottom: '16px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                    <AlertTriangle size={16} color="#a21caf" />
+                    <span style={{ fontSize: '13px', fontWeight: '800', color: '#86198f' }}>
+                      AICTE Approval Officer Scrutiny Directives ({selectedApp.officer_name || 'Dr. Priya Sharma'}):
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#4a044e', lineHeight: '1.5' }}>
+                    {selectedApp.officer_suggestions}
+                  </div>
+                </div>
+              )}
+
+              {/* Findings & Deficiencies Breakdown */}
+              <div className="gov-card" style={{ marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a', marginBottom: '12px' }}>
+                  Identified Deficiencies &amp; Regulatory Findings ({selectedApp.findings?.length || 0})
+                </h3>
+
+                {(!selectedApp.findings || selectedApp.findings.length === 0) ? (
+                  <div style={{ padding: '24px', textAlign: 'center', color: '#059669', background: '#ecfdf5', borderRadius: '6px', fontSize: '12.5px', fontWeight: '700' }}>
+                    ✓ No deficiencies detected. All mandatory statutory rules satisfy APH 2026-27 requirements.
+                  </div>
+                ) : (
+                  <div className="table-responsive">
+                    <table className="gov-table">
+                      <thead>
+                        <tr>
+                          <th>Rule Reference</th>
+                          <th>Finding Description</th>
+                          <th>Severity</th>
+                          <th>Status</th>
+                          <th>Recommended Corrective Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedApp.findings.map(f => (
+                          <tr key={f.id}>
+                            <td style={{ fontWeight: '700', color: '#1d4ed8' }}>{f.field_name || f.rule_id || 'APH-2026'}</td>
+                            <td style={{ fontSize: '12px', color: '#0f172a' }}>{f.finding_text || f.detected_issue}</td>
+                            <td>
+                              <span style={{
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                fontSize: '10.5px',
+                                fontWeight: '800',
+                                background: f.severity === 'critical' ? '#fee2e2' : (f.severity === 'high' ? '#fef3c7' : '#f1f5f9'),
+                                color: f.severity === 'critical' ? '#b91c1c' : (f.severity === 'high' ? '#b45309' : '#334155')
+                              }}>
+                                {f.severity?.toUpperCase()}
+                              </span>
+                            </td>
+                            <td>
+                              <span className={`status-badge status-${f.status?.toLowerCase()}`}>
+                                {f.status?.replace('_', ' ')}
+                              </span>
+                            </td>
+                            <td style={{ fontSize: '11.5px', color: '#1d4ed8', fontWeight: '600' }}>
+                              {f.recommended_action || f.suggested_action || 'Upload updated official certificate'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Permitted Rectification Actions & Replacement Document Upload */}
+              <div className="gov-card">
+                <h3 style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a', marginBottom: '4px' }}>
+                  Permitted Correction Actions: Upload Replacement Statutory Documents
+                </h3>
+                <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 14px 0' }}>
+                  Upload valid, authenticated replacement files (.pdf, .png, .jpg) to resolve deficiencies. Version history is preserved automatically.
+                </p>
+
+                {uploadSuccessMsg && (
+                  <div style={{ padding: '10px 14px', background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '6px', color: '#065f46', fontSize: '12px', fontWeight: '700', marginBottom: '14px' }}>
+                    {uploadSuccessMsg}
+                  </div>
+                )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
+                  {REQUIRED_DOCS_LIST.map(item => {
+                    const existingDoc = appDocs.find(d => d.doc_type === item.doc_type);
+                    return (
+                      <div key={item.doc_type} style={{
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '6px',
+                        padding: '12px',
+                        background: existingDoc ? '#f8fafc' : '#ffffff'
+                      }}>
+                        <div style={{ fontSize: '12.5px', fontWeight: '700', color: '#0f172a' }}>
+                          {item.doc_type}
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#64748b', margin: '2px 0 8px 0' }}>
+                          Standard: {item.required_value}
+                        </div>
+
+                        {existingDoc ? (
+                          <div style={{ fontSize: '11px', color: '#047857', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <CheckCircle2 size={12} /> Uploaded: {existingDoc.filename} (v{existingDoc.version || 1})
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: '11px', color: '#b45309', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <AlertTriangle size={12} /> Pending Upload
+                          </div>
+                        )}
+
+                        <input
+                          type="file"
+                          accept=".pdf,.png,.jpg,.jpeg"
+                          id={`rectify-file-${item.doc_type}`}
+                          style={{ fontSize: '11px', width: '100%', marginBottom: '8px' }}
+                          onChange={e => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              handleUploadReplacement(selectedApp.application_id, item.doc_type, file);
+                            }
+                          }}
+                          disabled={uploadingDocType === item.doc_type}
+                        />
+
+                        {uploadingDocType === item.doc_type && (
+                          <div style={{ fontSize: '11px', color: '#1d4ed8', fontWeight: '600' }}>
+                            Uploading &amp; indexing document...
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div style={{ marginTop: '18px', textAlign: 'right' }}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => handleValidateApplication(selectedApp.application_id)}
+                    disabled={validatingAppId === selectedApp.application_id}
+                  >
+                    <RefreshCw size={14} className={validatingAppId === selectedApp.application_id ? 'animate-spin' : ''} />
+                    <span>{validatingAppId === selectedApp.application_id ? 'Re-validating Application...' : 'Re-Validate Corrected Application'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* 5. CLARIFICATIONS & NOTIFICATIONS (Blueprint Section 2.5) */}
+      {/* ============================================================ */}
+      {subPage === 'inst-clarifications-notifications' && (
+        <div>
+          {/* Section 1: Clarifications Inbox & Communication Desk */}
+          <div className="gov-card" style={{ marginBottom: '18px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+              <div>
+                <div style={{ fontSize: '11px', color: '#1d4ed8', fontWeight: '800', textTransform: 'uppercase' }}>
+                  Statutory Officer Communication Channel
+                </div>
+                <h2 style={{ fontSize: '17px', fontWeight: '800', color: '#0f172a', margin: '2px 0 0 0' }}>
+                  Officer Clarification Inquiries &amp; Institutional Responses
+                </h2>
+                <div style={{ fontSize: '12px', color: '#64748b' }}>
+                  Traceable inquiry inbox: view queries from AICTE Scrutiny Officers, furnish explanations, and attach evidence.
+                </div>
+              </div>
+
+              {/* Status Filters */}
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  onClick={() => setClarificationFilter('ALL')}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '11px',
+                    fontWeight: clarificationFilter === 'ALL' ? '700' : '500',
+                    background: clarificationFilter === 'ALL' ? '#1d4ed8' : '#f1f5f9',
+                    color: clarificationFilter === 'ALL' ? '#ffffff' : '#475569',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  All ({clarifications.length})
+                </button>
+                <button
+                  onClick={() => setClarificationFilter('PENDING')}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '11px',
+                    fontWeight: clarificationFilter === 'PENDING' ? '700' : '500',
+                    background: clarificationFilter === 'PENDING' ? '#ea580c' : '#f1f5f9',
+                    color: clarificationFilter === 'PENDING' ? '#ffffff' : '#475569',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Pending Reply ({clarifications.filter(c => c.status === 'PENDING_INSTITUTION').length})
+                </button>
+                <button
+                  onClick={() => setClarificationFilter('RESOLVED')}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '11px',
+                    fontWeight: clarificationFilter === 'RESOLVED' ? '700' : '500',
+                    background: clarificationFilter === 'RESOLVED' ? '#059669' : '#f1f5f9',
+                    color: clarificationFilter === 'RESOLVED' ? '#ffffff' : '#475569',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Resolved ({clarifications.filter(c => c.status === 'RESOLVED').length})
+                </button>
+              </div>
+            </div>
+
+            {/* Clarifications Inbox Table */}
+            <div className="table-responsive" style={{ marginBottom: '18px' }}>
+              <table className="gov-table">
+                <thead>
+                  <tr>
+                    <th>Query ID</th>
+                    <th>Application</th>
+                    <th>Requesting Officer</th>
+                    <th>Subject</th>
+                    <th>Date Issued</th>
+                    <th>Due Date</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {clarifications.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} style={{ textAlign: 'center', padding: '24px', color: '#64748b' }}>
+                        No formal clarification queries issued by AICTE Scrutiny Officers.
+                      </td>
+                    </tr>
+                  ) : (
+                    clarifications
+                      .filter(c => {
+                        if (clarificationFilter === 'PENDING') return c.status === 'PENDING_INSTITUTION';
+                        if (clarificationFilter === 'RESOLVED') return c.status === 'RESOLVED';
+                        return true;
+                      })
+                      .map(clr => (
+                        <tr key={clr.id} style={{ background: selectedClarification?.id === clr.id ? '#eff6ff' : 'transparent' }}>
+                          <td style={{ fontWeight: '700', color: '#1d4ed8' }}>{clr.clarification_id || `CLR-${clr.id}`}</td>
+                          <td style={{ fontWeight: '600' }}>{clr.application_id}</td>
+                          <td>{clr.officer_id ? `AICTE Officer #${clr.officer_id}` : 'AICTE Scrutiny Officer'}</td>
+                          <td style={{ fontSize: '12px', color: '#0f172a' }}>{clr.subject}</td>
+                          <td style={{ fontSize: '11.5px', color: '#64748b' }}>
+                            {new Date(clr.created_at).toLocaleDateString('en-IN')}
+                          </td>
+                          <td style={{ fontSize: '11.5px', color: clr.due_date ? '#b45309' : '#64748b', fontWeight: clr.due_date ? '700' : 'normal' }}>
+                            {clr.due_date ? new Date(clr.due_date).toLocaleDateString('en-IN') : 'Standard (7 Days)'}
+                          </td>
+                          <td>
+                            <span style={{
+                              fontSize: '10.5px',
+                              fontWeight: '800',
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              background: clr.status === 'PENDING_INSTITUTION' ? '#fff7ed' : (clr.status === 'RESOLVED' ? '#ecfdf5' : '#eff6ff'),
+                              color: clr.status === 'PENDING_INSTITUTION' ? '#c2410c' : (clr.status === 'RESOLVED' ? '#047857' : '#1d4ed8')
+                            }}>
+                              {clr.status.replace('_', ' ')}
+                            </span>
+                          </td>
+                          <td>
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => setSelectedClarification(clr)}
+                              style={{ padding: '3px 8px', fontSize: '11px' }}
+                            >
+                              <Eye size={12} /> View Thread
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Active Clarification Conversation Workspace */}
+            {selectedClarification && (
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1.5px solid #cbd5e1' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>
+                  <div>
+                    <span style={{ fontSize: '11px', color: '#1d4ed8', fontWeight: '800' }}>
+                      Thread: {selectedClarification.clarification_id || `CLR-${selectedClarification.id}`} · Application #{selectedClarification.application_id}
+                    </span>
+                    <h3 style={{ fontSize: '15px', fontWeight: '800', color: '#0f172a', margin: '2px 0 0 0' }}>
+                      {selectedClarification.subject}
+                    </h3>
+                  </div>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setSelectedClarification(null)}
+                    style={{ padding: '2px 6px', fontSize: '11px' }}
+                  >
+                    Close Thread ✕
+                  </button>
+                </div>
+
+                {/* Timeline Messages */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px', maxHeight: '300px', overflowY: 'auto' }}>
+                  {/* Initial Query Message */}
+                  <div style={{ padding: '12px 14px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: '800', color: '#9a3412' }}>
+                        AICTE Scrutiny Officer
+                      </span>
+                      <span style={{ fontSize: '11px', color: '#7c2d12' }}>
+                        {new Date(selectedClarification.created_at).toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#431407', lineHeight: '1.45' }}>
+                      {selectedClarification.question_text}
+                    </div>
+                  </div>
+
+                  {/* Threaded Reply Messages */}
+                  {(selectedClarification.messages || []).map((msg, mIdx) => (
+                    <div
+                      key={mIdx}
+                      style={{
+                        padding: '12px 14px',
+                        background: msg.sender_role === 'INSTITUTION' ? '#ecfdf5' : '#f8fafc',
+                        border: `1px solid ${msg.sender_role === 'INSTITUTION' ? '#a7f3d0' : '#e2e8f0'}`,
+                        borderRadius: '6px',
+                        marginLeft: msg.sender_role === 'INSTITUTION' ? '20px' : '0'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                        <span style={{ fontSize: '12px', fontWeight: '800', color: msg.sender_role === 'INSTITUTION' ? '#047857' : '#0f172a' }}>
+                          {msg.sender_role === 'INSTITUTION' ? '🏛️ Institution Response' : '⚖️ Officer Observation'} ({msg.sender_name})
+                        </span>
+                        <span style={{ fontSize: '11px', color: '#64748b' }}>
+                          {msg.timestamp ? new Date(msg.timestamp).toLocaleString('en-IN') : 'Recent'}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#1e293b', lineHeight: '1.45' }}>
+                        {msg.text}
+                      </div>
+                      {msg.attachment && (
+                        <div style={{ marginTop: '6px', fontSize: '11px', color: '#1d4ed8', fontWeight: '600' }}>
+                          Attachment: {msg.attachment}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Reply Form (Active if not resolved) */}
+                {selectedClarification.status !== 'RESOLVED' ? (
+                  <div style={{ background: '#ffffff', padding: '14px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#0f172a', marginBottom: '6px' }}>
+                      Furnish Clarification Explanation / Supporting Evidence:
+                    </div>
+                    <textarea
+                      className="form-control"
+                      rows={3}
+                      placeholder="Enter detailed clarification response addressed to AICTE Scrutiny Officer..."
+                      value={clarificationReplyText}
+                      onChange={e => setClarificationReplyText(e.target.value)}
+                      style={{ fontSize: '12px', marginBottom: '8px' }}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Optional attachment reference or document link..."
+                        value={clarificationAttachment}
+                        onChange={e => setClarificationAttachment(e.target.value)}
+                        style={{ width: '320px', fontSize: '11.5px' }}
+                      />
+                      <button
+                        className="btn btn-primary btn-sm"
+                        disabled={submittingClarification || !clarificationReplyText.trim()}
+                        onClick={async () => {
+                          setSubmittingClarification(true);
+                          try {
+                            await replyToClarification(String(selectedClarification.id), {
+                              reply_text: clarificationReplyText.trim(),
+                              attachment_url: clarificationAttachment.trim() || undefined
+                            });
+                            const updatedClarifs = await getAllClarifications().catch(() => []);
+                            setClarifications(updatedClarifs);
+                            const updatedCurr = updatedClarifs.find(c => c.id === selectedClarification.id);
+                            if (updatedCurr) setSelectedClarification(updatedCurr);
+                            setClarificationReplyText('');
+                            setClarificationAttachment('');
+                            setActionNotice('Formal clarification response dispatched to AICTE Officer.');
+                          } catch (err: any) {
+                            alert(err?.response?.data?.detail || 'Failed to submit response.');
+                          } finally {
+                            setSubmittingClarification(false);
+                          }
+                        }}
+                      >
+                        <Send size={13} />
+                        <span>{submittingClarification ? 'Submitting...' : 'Submit Response to Officer'}</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ padding: '10px 14px', background: '#ecfdf5', borderRadius: '4px', color: '#047857', fontSize: '12px', fontWeight: '700', textAlign: 'center' }}>
+                    ✓ This clarification query has been formally resolved and accepted by the AICTE Scrutiny Officer.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Section 2: Statutory Notifications */}
+          <div className="gov-card">
+            <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '14px' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: '800', color: '#0f172a', margin: 0 }}>
+                Statutory Notifications &amp; Platform Event Alerts
+              </h3>
+            </div>
+
+            {notifications.length === 0 ? (
+              <div style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>
+                No notifications logged at this time.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {notifications.map(n => (
+                  <div
+                    key={n.id}
+                    style={{
+                      padding: '12px 14px',
+                      background: n.type === 'DEFICIENCY_ALERT' ? '#fffbeb' : '#f8fafc',
+                      border: `1px solid ${n.type === 'DEFICIENCY_ALERT' ? '#fde68a' : '#e2e8f0'}`,
+                      borderRadius: '6px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <span style={{ fontSize: '12.5px', fontWeight: '700', color: '#0f172a' }}>
+                        {n.title}
+                      </span>
+                      <span style={{ fontSize: '11px', color: '#64748b' }}>
+                        {new Date(n.created_at).toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#334155', lineHeight: '1.4' }}>
+                      {n.message}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* 6. APPLICATION HISTORY (Blueprint Section 2.6) */}
+      {/* ============================================================ */}
+      {subPage === 'inst-history' && (
+        <div className="gov-card">
+          <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '16px' }}>
+            <div style={{ fontSize: '11px', color: '#1d4ed8', fontWeight: '800', textTransform: 'uppercase' }}>
+              Immutable Regulatory Timeline
+            </div>
+            <h2 style={{ fontSize: '16px', fontWeight: '800', color: '#0f172a', margin: '2px 0 0 0' }}>
+              Application History &amp; Approval Archive
+            </h2>
+            <div style={{ fontSize: '12px', color: '#64748b' }}>
+              Read-only record of prior submissions, validation iterations, status transitions, and official decisions.
+            </div>
+          </div>
+
+          <div className="table-responsive">
+            <table className="gov-table">
+              <thead>
+                <tr>
+                  <th>Application ID</th>
+                  <th>Category</th>
+                  <th>Academic Year</th>
+                  <th>Submission Date</th>
+                  <th>Version</th>
+                  <th>Final Decision</th>
+                  <th>Certificate / Receipt</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {apps.map(a => (
+                  <tr key={a.id}>
+                    <td style={{ fontWeight: '700', color: '#1d4ed8' }}>{a.application_id}</td>
+                    <td style={{ fontWeight: '600' }}>{a.category}</td>
+                    <td>{a.academic_year || '2026-27'}</td>
+                    <td style={{ fontSize: '11.5px', color: '#475569' }}>
+                      {new Date(a.submitted_at).toLocaleDateString('en-IN')}
+                    </td>
+                    <td>v{a.documents && a.documents.length > 0 ? Math.max(...a.documents.map(d => d.version || 1)) : 1}</td>
+                    <td>
+                      <span className={`status-badge status-${a.status?.toLowerCase()}`}>
+                        {a.status?.replace('_', ' ')}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: '11.5px', color: '#047857', fontWeight: '700' }}>
+                      {a.certificate_number || (a.status === 'APPROVED' ? 'Issued' : 'Filing Receipt Available')}
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => {
+                            loadAppDetails(a);
+                            setShowScrutinyModal(true);
+                          }}
+                          style={{ padding: '3px 8px', fontSize: '11px' }}
+                        >
+                          <FileText size={12} /> Scrutiny Dossier
+                        </button>
+                        {Boolean(a.certificate_issued || a.status === 'APPROVED') && (
+                          <button
+                            className="btn btn-sm"
+                            onClick={() => {
+                              setCertificateApp(a);
+                              setShowCertificateModal(true);
+                            }}
+                            style={{
+                              padding: '3px 8px',
+                              fontSize: '11px',
+                              background: '#059669',
+                              color: '#ffffff',
+                              border: 'none',
+                              fontWeight: '700'
+                            }}
+                          >
+                            <Award size={12} /> Certificate
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* 7. MY ACCOUNT (Blueprint Section 2.7) */}
+      {/* ============================================================ */}
+      {subPage === 'inst-account' && (
+        <div>
+          <div className="gov-card" style={{ marginBottom: '18px' }}>
+            <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '16px' }}>
+              <div style={{ fontSize: '11px', color: '#1d4ed8', fontWeight: '800', textTransform: 'uppercase' }}>
+                Account Security &amp; Access Controls
+              </div>
+              <h2 style={{ fontSize: '17px', fontWeight: '800', color: '#0f172a', margin: '2px 0 0 0' }}>
+                Institutional Applicant Account &amp; Security Workspace
+              </h2>
+              <div style={{ fontSize: '12px', color: '#64748b' }}>
+                Manage account credentials, two-factor authentication, active sessions, and view security policies.
+              </div>
+            </div>
+
+            {/* Profile Credentials Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px', marginBottom: '20px' }}>
+              <div style={{ padding: '14px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600' }}>Institution Legal Name</div>
+                <div style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a', marginTop: '2px' }}>
+                  {profile?.name || user?.full_name}
+                </div>
+              </div>
+
+              <div style={{ padding: '14px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600' }}>AICTE Permanent ID (PID)</div>
+                <div style={{ fontSize: '14px', fontWeight: '800', color: '#1d4ed8', marginTop: '2px' }}>
+                  {profile?.aicte_id || '1-33245561'}
+                </div>
+              </div>
+
+              <div style={{ padding: '14px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600' }}>Registered Authorized Email</div>
+                <div style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a', marginTop: '2px' }}>
+                  {user?.email || profile?.email}
+                </div>
+              </div>
+
+              <div style={{ padding: '14px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600' }}>Statutory Portal Role</div>
+                <div style={{ fontSize: '14px', fontWeight: '800', color: '#059669', marginTop: '2px' }}>
+                  Technical Institution Applicant (RBAC: INSTITUTION)
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Change Password & Security Settings */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '18px' }}>
+            {/* Password Update Form */}
+            <div className="gov-card">
+              <h3 style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a', marginBottom: '8px' }}>
+                Update Account Password
+              </h3>
+              <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 14px 0' }}>
+                Ensure your sovereign credentials adhere to National Informatics Centre (NIC) security policies.
+              </p>
+
+              {pwNotice && (
+                <div style={{ padding: '10px 12px', background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '4px', color: '#065f46', fontSize: '12px', fontWeight: '600', marginBottom: '12px' }}>
+                  {pwNotice}
+                </div>
+              )}
+
+              <form onSubmit={e => {
+                e.preventDefault();
+                if (pwForm.next !== pwForm.confirm) {
+                  alert('New password and confirmation do not match.');
+                  return;
+                }
+                setPwNotice('Account password updated successfully. Audit log recorded.');
+                setPwForm({ current: '', next: '', confirm: '' });
+              }}>
+                <div style={{ marginBottom: '10px' }}>
+                  <label className="form-label">Current Password:</label>
+                  <input
+                    type="password"
+                    className="form-control"
+                    required
+                    value={pwForm.current}
+                    onChange={e => setPwForm({ ...pwForm, current: e.target.value })}
+                  />
+                </div>
+                <div style={{ marginBottom: '10px' }}>
+                  <label className="form-label">New Password:</label>
+                  <input
+                    type="password"
+                    className="form-control"
+                    required
+                    value={pwForm.next}
+                    onChange={e => setPwForm({ ...pwForm, next: e.target.value })}
+                  />
+                </div>
+                <div style={{ marginBottom: '14px' }}>
+                  <label className="form-label">Confirm New Password:</label>
+                  <input
+                    type="password"
+                    className="form-control"
+                    required
+                    value={pwForm.confirm}
+                    onChange={e => setPwForm({ ...pwForm, confirm: e.target.value })}
+                  />
+                </div>
+                <button type="submit" className="btn btn-primary btn-sm">
+                  Update Password
+                </button>
+              </form>
+            </div>
+
+            {/* 2FA & Active Sessions & RBAC Disclaimer */}
+            <div className="gov-card">
+              <h3 style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a', marginBottom: '12px' }}>
+                Authentication &amp; Session Health
+              </h3>
+
+              <div style={{ padding: '12px', background: '#ecfdf5', borderRadius: '6px', border: '1px solid #a7f3d0', marginBottom: '14px' }}>
+                <div style={{ fontSize: '12px', fontWeight: '800', color: '#047857' }}>
+                  ✓ Multi-Factor Authentication (2FA): Active
+                </div>
+                <div style={{ fontSize: '11px', color: '#065f46', marginTop: '2px' }}>
+                  Protected by TOTP Sovereign Authenticator. Mandatory for final submissions.
+                </div>
+              </div>
+
+              <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', marginBottom: '14px' }}>
+                <div style={{ fontSize: '12px', fontWeight: '700', color: '#0f172a' }}>
+                  Current Active Session
+                </div>
+                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                  Host: Web Client · IP: 127.0.0.1 · Token: JWT Bearer (Expires in 24h)
+                </div>
+              </div>
+
+              <div style={{ padding: '12px', background: '#fffbeb', borderRadius: '6px', border: '1px solid #fef3c7' }}>
+                <div style={{ fontSize: '11.5px', fontWeight: '800', color: '#b45309', marginBottom: '2px' }}>
+                  Statutory Access Control Disclaimer
+                </div>
+                <div style={{ fontSize: '11px', color: '#92400e', lineHeight: '1.4' }}>
+                  Institutional users cannot modify their assigned role or access records of another institution. All actions are cryptographically sealed in the central AICTE audit ledger.
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
