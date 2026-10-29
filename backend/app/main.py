@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session, selectinload, joinedload
 from sqlalchemy import func, or_
 from typing import List, Optional, Dict, Any
@@ -62,27 +62,24 @@ app = FastAPI(
     description="Streamlined AICTE Validation & Regulatory Review Platform"
 )
 
-# Parse CORS origins
-raw_origins = settings.CORS_ORIGINS
-if isinstance(raw_origins, str):
-    if raw_origins.strip() == "*":
-        allowed_origins = []
-        origin_regex = r"^https?://.*"
-    else:
-        allowed_origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
-        origin_regex = r"^https?://(localhost|127\.0\.0\.1|.*\.onrender\.com)(:[0-9]+)?$"
-else:
-    allowed_origins = [o for o in raw_origins if o != "*"]
-    origin_regex = r"^https?://(localhost|127\.0\.0\.1|.*\.onrender\.com)(:[0-9]+)?$"
-
+# Configure CORS to allow all local and cloud origins (Render, localhost, 127.0.0.1)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_origin_regex=origin_regex,
+    allow_origins=[],
+    allow_origin_regex=r"^https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Global unhandled exception on {request.method} {request.url.path}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {str(exc)}"}
+    )
 
 
 @app.on_event("startup")

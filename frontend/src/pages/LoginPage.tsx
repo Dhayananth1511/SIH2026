@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { IndianEmblem, LoginHeroGraphic } from '../components/Emblems';
-import { login as apiLogin, getActiveApiUrl } from '../api';
+import { login as apiLogin, getActiveApiUrl, resetApiUrl } from '../api';
 import { useAuth } from '../AuthContext';
 import type { User } from '../types';
 
@@ -136,7 +136,7 @@ export default function LoginPage({ onNavigateToSignUp, onLoginSuccess }: Props)
 
             {error && (
               <div style={{
-                padding: '10px 14px',
+                padding: '12px 14px',
                 background: '#fee2e2',
                 border: '1px solid #fecaca',
                 borderRadius: '8px',
@@ -144,7 +144,31 @@ export default function LoginPage({ onNavigateToSignUp, onLoginSuccess }: Props)
                 fontSize: '12px',
                 marginBottom: '18px'
               }}>
-                {error}
+                <div style={{ fontWeight: '600' }}>{error}</div>
+                {error.includes('Cannot connect') && (
+                  <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        resetApiUrl();
+                        window.location.reload();
+                      }}
+                      style={{
+                        padding: '4px 10px',
+                        background: '#ffffff',
+                        border: '1px solid #b91c1c',
+                        borderRadius: '4px',
+                        color: '#b91c1c',
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Connect via Local Backend (http://127.0.0.1:8000)
+                    </button>
+                    <span style={{ fontSize: '11px', color: '#7f1d1d' }}>or wait a moment for Render cloud backend to resume</span>
+                  </div>
+                )}
               </div>
             )}
 

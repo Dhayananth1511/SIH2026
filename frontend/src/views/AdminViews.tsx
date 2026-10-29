@@ -309,9 +309,9 @@ export default function AdminViews({ subPage, onNavigate }: Props) {
             </div>
 
             <div className="gov-card" style={{ padding: '16px', borderLeft: '4px solid #7c3aed' }}>
-              <div style={{ fontSize: '11.5px', color: '#64748b', fontWeight: '600' }}>AI Agents Live</div>
+              <div style={{ fontSize: '11.5px', color: '#64748b', fontWeight: '600' }}>Statutory Portal Roles</div>
               <div style={{ fontSize: '24px', fontWeight: '800', color: '#7c3aed', marginTop: '4px' }}>
-                5 / 5
+                3 / 3
               </div>
             </div>
           </div>
