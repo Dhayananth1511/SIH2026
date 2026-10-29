@@ -1,13 +1,7 @@
 export type UserRole =
   | 'institution'
   | 'officer'
-  | 'scrutiny_officer'
-  | 'compliance_officer'
-  | 'chairman'
-  | 'admin'
-  | 'verification_officer'
-  | 'compliance_reviewer'
-  | 'decision_maker';
+  | 'admin';
 
 export interface User {
   id: number | string;

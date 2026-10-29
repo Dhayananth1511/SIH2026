@@ -319,11 +319,24 @@ export default function AdminViews({ subPage, onNavigate }: Props) {
           {/* CENTRAL SYSTEM VISUAL ANALYTICS & GOVERNANCE CHARTS */}
           {(() => {
             const roleData = [
-              { name: 'Institutions', value: users.filter(u => u.role === 'institution').length || 1, color: '#059669' },
-              { name: 'Scrutiny Officers', value: users.filter(u => u.role === 'verification_officer' || u.role === 'officer').length || 1, color: '#1d4ed8' },
-              { name: 'Compliance Reviewers', value: users.filter(u => u.role === 'compliance_reviewer').length || 1, color: '#7c3aed' },
-              { name: 'Decision Makers', value: users.filter(u => u.role === 'decision_maker').length || 1, color: '#d97706' },
-              { name: 'Administrators', value: users.filter(u => u.role === 'admin').length || 1, color: '#dc2626' }
+              {
+                name: 'Institutions',
+                value: users.filter(u => (u.role || '').toLowerCase() === 'institution').length,
+                color: '#059669'
+              },
+              {
+                name: 'Approval Officers',
+                value: users.filter(u => {
+                  const r = (u.role || '').toLowerCase();
+                  return r === 'officer' || r === 'scrutiny_officer' || r === 'verification_officer' || r === 'compliance_reviewer' || r === 'decision_maker';
+                }).length,
+                color: '#1d4ed8'
+              },
+              {
+                name: 'Administrators',
+                value: users.filter(u => (u.role || '').toLowerCase() === 'admin').length,
+                color: '#dc2626'
+              }
             ].filter(i => i.value > 0);
 
             const catCounts: Record<string, number> = {};
@@ -350,7 +363,7 @@ export default function AdminViews({ subPage, onNavigate }: Props) {
                 <StatusDonutChart
                   data={roleData}
                   title="Platform RBAC Account Distribution"
-                  subtitle="Active user accounts classified across the 5 statutory roles"
+                  subtitle="Active user accounts classified across the 3 statutory roles"
                   height={220}
                 />
                 <ComplianceCategoryBarChart
@@ -457,9 +470,18 @@ export default function AdminViews({ subPage, onNavigate }: Props) {
                     <td style={{ fontWeight: '600', color: '#0f172a' }}>{u.full_name}</td>
                     <td>{u.email}</td>
                     <td>
-                      <span className={`status-badge status-${u.role?.toLowerCase()}`}>
-                        {u.role?.replace('_', ' ')}
-                      </span>
+                      {(() => {
+                        const r = (u.role || '').toLowerCase();
+                        const isAdm = r.includes('admin');
+                        const isInst = r.includes('institution');
+                        const badgeClass = isAdm ? 'status-admin' : isInst ? 'status-institution' : 'status-officer';
+                        const label = isAdm ? 'System Administrator' : isInst ? 'Institution' : 'AICTE Approval Officer';
+                        return (
+                          <span className={`status-badge ${badgeClass}`}>
+                            {label}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td>
                       <span style={{ fontSize: '11px', color: u.is_active ? '#059669' : '#dc2626', fontWeight: '600' }}>
@@ -470,14 +492,11 @@ export default function AdminViews({ subPage, onNavigate }: Props) {
                       <select
                         className="form-control"
                         style={{ fontSize: '11px', padding: '3px 8px', width: 'auto' }}
-                        value={u.role}
+                        value={(u.role || '').toLowerCase().includes('admin') ? 'admin' : (u.role || '').toLowerCase().includes('institution') ? 'institution' : 'officer'}
                         onChange={e => handleRoleChange(Number(u.id), e.target.value)}
                       >
                         <option value="institution">Institution</option>
                         <option value="officer">AICTE Approval Officer</option>
-                        <option value="scrutiny_officer">Scrutiny Officer</option>
-                        <option value="compliance_officer">Compliance Officer</option>
-                        <option value="chairman">Authorized Decision-Maker</option>
                         <option value="admin">System Administrator</option>
                       </select>
                     </td>
