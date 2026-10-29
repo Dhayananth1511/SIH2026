@@ -29,20 +29,32 @@ connect_args = {"connect_timeout": 15}
 if "sslmode" not in db_url:
     connect_args["sslmode"] = "require"
 
-# Resolve Supabase IPv6 address for Windows compatibility if using direct hostname
+# Supabase Connection Routing:
+# Direct hostnames (db.[ref].supabase.co) are IPv6-only on modern Supabase.
+# In environments without global IPv6 (Render, local IPv4-only networks), route through the official IPv4 pooler.
 try:
     parsed = urlparse(db_url)
     host = parsed.hostname
-    if host and "supabase.co" in host and not host.startswith("["):
+    if host and host.startswith("db.") and host.endswith(".supabase.co"):
+        ref = host[3:-len(".supabase.co")]
+        # Test if direct host can resolve
+        direct_resolvable = False
         try:
-            addrinfo = socket.getaddrinfo(host, parsed.port or 5432, socket.AF_INET6)
-            if addrinfo:
-                ipv6 = addrinfo[0][4][0]
-                new_netloc = parsed.netloc.replace(host, f"[{ipv6}]")
-                db_url = urlunparse(parsed._replace(netloc=new_netloc))
-                logger.info(f"Resolved Supabase host '{host}' to IPv6 '[{ipv6}]'")
-        except Exception as dns_err:
-            logger.debug(f"IPv6 resolution skipped: {dns_err}")
+            addr = socket.getaddrinfo(host, parsed.port or 5432)
+            if addr:
+                direct_resolvable = True
+        except Exception:
+            direct_resolvable = False
+
+        if not direct_resolvable:
+            # Route seamlessly via Supabase IPv4 session pooler (port 5432)
+            pooler_host = "aws-0-ap-southeast-1.pooler.supabase.com"
+            new_user = f"postgres.{ref}" if parsed.username == "postgres" else (parsed.username or f"postgres.{ref}")
+            port = parsed.port or 5432
+            auth = f"{new_user}:{parsed.password}@" if parsed.password else f"{new_user}@"
+            new_netloc = f"{auth}{pooler_host}:{port}"
+            db_url = urlunparse(parsed._replace(netloc=new_netloc))
+            logger.info(f"Supabase direct host '{host}' auto-routed via IPv4 pooler '{pooler_host}'")
 except Exception as e:
     logger.debug(f"URL parsing note: {e}")
 
