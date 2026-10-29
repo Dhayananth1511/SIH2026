@@ -103,6 +103,30 @@ def on_startup():
         print(f"Notice during startup seed check: {e}")
 
 
+@app.get("/", tags=["System"])
+def root():
+    return {
+        "status": "online",
+        "service": "AICTE Statutory Regulatory & Compliance Verification Engine API",
+        "agency": "All India Council for Technical Education (AICTE), Ministry of Education, Govt of India",
+        "version": settings.VERSION,
+        "docs": "/docs",
+        "health": "/health",
+        "database": "Supabase PostgreSQL (Active)",
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
+
+@app.get("/api", tags=["System"])
+def api_root():
+    return root()
+
+
+@app.get("/api/health", tags=["System"])
+def api_health():
+    return health_check()
+
+
 @app.get("/health", tags=["System"])
 def health_check():
     return {
